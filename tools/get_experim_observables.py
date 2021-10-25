@@ -109,15 +109,20 @@ def RF_fitparams(sd,RF,**kwargs):
 	DA = kwargs["DA"]
 	Nlgn = kwargs["Nlgn"]
 
+	## fit variables in fit_params:
 	## sigma : width of envelope in x direction
 	## theta : orientation of gabor in rad
 	## Lambda : wavelength of gabor
 	## psi : phase of gabor in rad
+	## gamma : decay of envelope in y relative to x direction
+
+
 	sd = sd.reshape(N4,N4*Nvert,Nlgn,Nlgn)
 	_,Rn = analysis_tools.get_response(sd,DA,Nvert=Nvert)
+	print("RF[0,...]",RF[0,...].size,np.sum(np.isfinite(RF[0,...])))
 	fit_params,fitted_gabor,fit_cost,xmax,ymax = analysis_tools.fit_gabor_to_RF(\
-															RF[0,...],DA=DA,\
-															Nvert=Nvert,N4=N4,Rn=Rn)
+																RF[0,...],DA=DA,\
+																Nvert=Nvert,N4=N4,Rn=Rn)
 	fit_params = fit_params.reshape(N4**2*Nvert,-1)
 	ncols = fit_params.shape[-1]
 	reasonable_fits = fit_params[:,0]>1.
@@ -128,7 +133,7 @@ def RF_fitparams(sd,RF,**kwargs):
 	num_halfcycles = np.nanmean([xmax,ymax])*4/fit_params[:,3]
 	gabor_params[:,:3] = fit_params[:,:3]
 	gabor_params[:,3] = num_halfcycles
-	gabor_params[:,4] = np.log10(fit_params[:,4])
+	gabor_params[:,4] = -np.log10(fit_params[:,4])
 
 	return gabor_params,fitted_gabor,fit_cost
 
@@ -158,9 +163,17 @@ def compute_experimental_observables(Wlgn_to_4, RF, **kwargs):
 
 	RF_ratio = on_off_ratio(RF,**kwargs)
 
+	DA = kwargs["DA"]
+	Nvert = kwargs["Nvert"]
+	Nlgn = kwargs["Nlgn"]
+	N4 = kwargs["N4"]
+	sd = sd.reshape(N4,N4*Nvert,Nlgn,Nlgn)
+	opm,Rn = analysis_tools.get_response(sd,DA,Nvert=Nvert)
+
 	observables = {
 					"Envelope width" : gabor_params[:,0],
-					"Orientation" : gabor_params[:,1],
+					"Orientation_fit" : gabor_params[:,1],
+					"Orientation_FT" : opm,
 					"Relative phase" : gabor_params[:,2],
 					"# half cycles" : gabor_params[:,3],
 					"Log aspect ratio" : gabor_params[:,4],

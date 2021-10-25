@@ -29,6 +29,35 @@ def damped_bessel(x,var,alpha):
 def linfct(x,a,b):
 	return a*x+b
 
+
+## Connectivity
+def H(k,sigma):
+	""" FT of gaussian connectivity """
+	return np.exp(-k**2/2.*sigma*sigma)
+
+## Trace, Determinant and Eigenvalue
+def tracek(k,aee,aii,see,sii,tau=1,alpha=0):
+	aii_s = aii*(1-alpha)
+	aii_a = aii*alpha
+	return -1 - (1 + aii_s*H(k,sii) + aii_a)/tau + aee*H(k,see)
+
+def detk(k,aee,aeiaie,aii,see,sei,sii,tau=1,alpha=0):
+	aii_s = aii*(1-alpha)
+	aii_a = aii*alpha
+	return ((1 + aii_s*H(k,sii) + aii_a)*(1 - aee*H(k,see)) + aeiaie*H(k,see)*H(k,sei))/tau
+
+def eigval_max(k,aee,aeiaie,aii,see,sei,sii,tau=1,alpha=0):
+	tr = tracek(k,aee,aii,see,sii,tau,alpha)
+	arg = tr**2 - 4*detk(k,aee,aeiaie,aii,see,sei,sii,tau,alpha)
+	
+	sign = np.ones_like(arg,dtype=float)
+	sign[arg<0] = -1
+	factor = np.ones_like(arg,dtype=complex)
+	factor[arg<0] = 1j
+	return tr/2. + factor*1./2*np.sqrt(arg*sign)
+
+
+
 ## helper functions
 def get_autocorrelation(pattern,max_spatial_lag=None):
 	"""calculates autocorrelation of array pattern"""

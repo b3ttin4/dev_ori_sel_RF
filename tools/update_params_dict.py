@@ -39,8 +39,7 @@ def update_params_dict(orig_dict,updated_params_dict):
 		r_A_on = orig_dict["Wlgn_to4_params"]["r_A_on"]
 
 	## developing parameters
-	developing_params = ["beta_P","onoff_rel_weight","onoff_rel_weight","off_bias_strength",\
-						 "off_bias_region_size"]
+	developing_params = ["beta_P","onoff_rel_weight","off_bias_region_size","off_bias_strength"]
 	for key in developing_params:
 		if updated_params_dict[key] is not None:
 			if len(updated_params_dict[key])>1:
@@ -105,6 +104,11 @@ def update_params_dict(orig_dict,updated_params_dict):
 		orig_dict["W23to4_params"]["aIE"] *= updated_params_dict["w23to4_ampl"]
 		orig_dict["W23to4_params"]["aII"] *= updated_params_dict["w23to4_ampl"]
 
+	if updated_params_dict["multiplicative_normalisation_lgn"] is not None:
+		orig_dict["Wlgn_to4_params"]["mult_norm"] = updated_params_dict["multiplicative_normalisation_lgn"]
+	if updated_params_dict["normalisation_mode_lgn"] is not None:
+		orig_dict["Wlgn_to4_params"]["constraint_mode"] = updated_params_dict["normalisation_mode_lgn"]
+
 	## update config_dict with given arguments
 	for key in updated_params_dict.keys():
 		if updated_params_dict[key] is not None:
@@ -125,6 +129,10 @@ def update_params_dict(orig_dict,updated_params_dict):
 				orig_dict["W4to4_params"]["noise"] = updated_params_dict[key]
 			elif key=="rec_conn_het":
 				orig_dict["W4to4_params"]["heterogeneity_type"] = updated_params_dict[key]
+			elif key=="rec_conn_mean_ecc":
+				orig_dict["W4to4_params"]["mean_eccentricity"] = updated_params_dict[key]
+			elif key=="w4to4_ew":
+				orig_dict["W4to4_params"]["max_ew"] = updated_params_dict[key]
 			
 			elif key not in developing_params:
 				if key in orig_dict:
@@ -136,9 +144,9 @@ def update_params_dict(orig_dict,updated_params_dict):
 				elif key in orig_dict["W4to4_params"]:
 					orig_dict["W4to4_params"][key] = updated_params_dict[key]
 		else:
-			print("{} not found in original dictionary".format(key))
+			# print("{} not found in original dictionary".format(key))
+			pass
 
-	print("CHECK",orig_dict["nonlinearity"])
 	return orig_dict
 
 
@@ -194,6 +202,7 @@ def update_params(params_dict):
 	if "simulate_activity" not in params_dict["Inp_params"].keys():
 		params_dict["Inp_params"]["simulate_activity"] = True
 
+	print(" params_dict[Inp_params].keys()", params_dict["Inp_params"])
 	## added sept 14, 2021 to implement off dominance in lgn
 	if "off_bias_strength" not in params_dict["Inp_params"].keys():
 		params_dict["Inp_params"]["off_bias_strength"] = 0.0

@@ -8,6 +8,10 @@ def distance(delta):
 	signs = np.sign(delta)
 	return np.where(np.abs(delta) > 0.5, -signs*(1 - np.abs(delta)), delta)
 
+def gaussian(x,y,s):
+	return np.exp(-(x**2+y**2)/2./s**2)#1./2.*np.pi/s**2*
+
+
 class Inputs:
 	'''
 	input to retina
@@ -16,15 +20,16 @@ class Inputs:
 		self.size = size
 		self.Version = Version
 		self.random_seed = random_seed
-	
+		
+		# rng = np.random.RandomState(self.Version*5101+202)
+		self.rng = np.random.RandomState(self.random_seed*5101+2023)
+
 	def create_matrix(self, inp_params, profile):		
 		self.profile = profile
 		##TODO: choose time-varying or static input
 		# if not inp_params:
 		# 	from bettina.modeling.ori_dev_model import inp_params
-
-		# rng = np.random.RandomState(self.Version*5101+202)
-		rng = np.random.RandomState(self.random_seed*5101+202)
+		
 		if self.profile=="GRF":
 			N = self.size[0]
 			ndim = inp_params["ndim"]
@@ -72,7 +77,7 @@ class Inputs:
 			grid = np.linspace(-0.5,0.5,N+2*pad_size,endpoint=False)
 			x,y = np.meshgrid(grid,grid)
 
-			whitenoise = rng.randn(Nsur,N,N,3)
+			whitenoise = self.rng.randn(Nsur,N,N,3)
 			for isur in range(Nsur):
 				if (isur+1)%(T_exp+1)==0:
 					whitenoise[isur,...] = 0.
@@ -95,7 +100,7 @@ class Inputs:
 			grid = np.linspace(-0.5,0.5,N+2*pad_size,endpoint=False)
 			x,y = np.meshgrid(grid,grid)
 
-			whitenoise = rng.randn(N,N,3)
+			whitenoise = self.rng.randn(N,N,3)
 			whitenoise = np.pad(whitenoise,((pad_size,pad_size),(pad_size,pad_size),\
 								(0,0)),'constant')
 			noise_on = 0 + 1.*whitenoise[...,0] - factor*whitenoise[...,-1]
@@ -115,21 +120,21 @@ class Inputs:
 
 			ctrs = []
 			for input_pattern in range(Nsur):
-				ctrx = rng.uniform(0,1,1)[0]
-				ctry = rng.uniform(0,1,1)[0]
+				ctrx = self.rng.uniform(0,1,1)[0]
+				ctry = self.rng.uniform(0,1,1)[0]
 				gridx = np.linspace(-ctrx,1-ctrx,self.size[0],endpoint=False)
 				gridy = np.linspace(-ctry,1-ctry,self.size[1],endpoint=False)
 				x,y = np.meshgrid(gridx,gridy)
 				# dist = np.sqrt(distance(x)**2 + distance(y)**2)
 				dist = np.sqrt(x**2 + y**2)
 
-				init_r = np.clip(rng.randn(1) * 0.2 + init_radius,0.05,1)
+				init_r = np.clip(self.rng.randn(1) * 0.2 + init_radius,0.05,1)
 				# init_r = rng.uniform(0.01,0.5,1)
-				vel = np.clip(rng.randn(1) * 0.05 + 0.1,0.01,0.5)
+				vel = np.clip(self.rng.randn(1) * 0.05 + 0.1,0.01,0.5)
 				# vel = rng.uniform(0.01,0.7,1)
 				# width = rng.uniform(0.05,1.,1)
-				width = np.clip(rng.randn(1) * 0.05 + mean_width,0.01,0.9)
-				sign = rng.choice([-1.,1.],1)
+				width = np.clip(self.rng.randn(1) * 0.05 + mean_width,0.01,0.9)
+				sign = self.rng.choice([-1.,1.],1)
 				print("settings",init_r,vel,width,sign)
 
 				for i in range(expansion_timesteps):
@@ -152,8 +157,8 @@ class Inputs:
 
 			ctrs = []
 			for input_pattern in range(Nsur):
-				ctrx = rng.uniform(0,1,1)
-				ctry = rng.uniform(0,1,1)
+				ctrx = self.rng.uniform(0,1,1)
+				ctry = self.rng.uniform(0,1,1)
 				gridx = np.linspace(-ctrx,1-ctrx,w,endpoint=False)
 				gridy = np.linspace(-ctry,1-ctry,h,endpoint=False)
 				x,y = np.meshgrid(gridx,gridy)
@@ -161,15 +166,15 @@ class Inputs:
 				# y = distance(y)
 				dist_on = np.sqrt(x**2 + y**2)
 
-				init_r = np.clip(rng.randn(1) * init_radius*0.9 + init_radius,0.01,1.)
-				vel = np.clip(rng.randn(1) * 0.08 + 0.1,0.01,0.7)
-				width = rng.uniform(0.05,1.,1)
+				init_r = np.clip(self.rng.randn(1) * init_radius*0.9 + init_radius,0.01,1.)
+				vel = np.clip(self.rng.randn(1) * 0.08 + 0.1,0.01,0.7)
+				width = self.rng.uniform(0.05,1.,1)
 
-				ctrx_of = rng.uniform(ctrx-0.3,ctrx+0.3,1)
-				ctry_of = rng.uniform(ctry-0.3,ctry+0.3,1)
+				ctrx_of = self.rng.uniform(ctrx-0.3,ctrx+0.3,1)
+				ctry_of = self.rng.uniform(ctry-0.3,ctry+0.3,1)
 				gridx = np.linspace(-ctrx_of,1-ctrx_of,w,endpoint=False)
 				gridy = np.linspace(-ctry_of,1-ctry_of,h,endpoint=False)
-				width_of = rng.uniform(0.05,1.,1)
+				width_of = self.rng.uniform(0.05,1.,1)
 				x,y = np.meshgrid(gridx,gridy)
 				# x = distance(x)
 				# y = distance(y)
@@ -178,11 +183,11 @@ class Inputs:
 
 				for i in range(expansion_timesteps):
 					circle_on = np.logical_and( dist_on > (init_r + vel*i),\
-						dist_on < (init_r + vel*i + width) ).astype(float) * dist_on
+								dist_on < (init_r + vel*i + width) ).astype(float) * dist_on
 					inputs[0,:,i+input_pattern*(expansion_timesteps+1)] = circle_on.flatten()
 					
 					circle_of = np.logical_and( dist_of > (init_r + vel*i),\
-						dist_of < (init_r + vel*i + width_of) ).astype(float) * dist_of
+								dist_of < (init_r + vel*i + width_of) ).astype(float) * dist_of
 					inputs[1,:,i+input_pattern*(expansion_timesteps+1)] = circle_of.flatten()
 
 				# inputs[:,:,input_pattern*expansion_timesteps:(input_pattern+1)*expansion_timesteps] /=\
@@ -204,12 +209,55 @@ class Inputs:
 			ky = 2*np.pi/self.size[0] * n
 			# Lambda = 2*np.pi/np.sqrt(kx**2+ky**2) #* np.sqrt(2)
 			inputs = np.zeros((self.size+(Nsur,)))
-			# print("check",theta,kx,ky,x[0,1],y[0,1])
 			for isur in range(Nsur):
 				phi = 1.*isur/Nsur * 2*np.pi
 				inputs[:,:,isur] = np.sin(kx * x + 0*ky * y + phi)
 			inputs = inputs.reshape(-1,Nsur)
 			return inputs
+
+		## model spatially localised traveling wave like input
+		elif self.profile=="localized_waves_online":
+
+			grid = np.linspace(-0.5,0.5,self.size[0],endpoint=False)
+			x,y = np.meshgrid(grid,grid)
+
+			mean_ecc = 0.9
+			sd_ecc = 0.05
+			ecc = 0.99#np.clip(np.random.randn(1)*sd_ecc + mean_ecc,0,0.99)
+			# print("ecc",ecc)
+			
+			mean_size = 1.
+			sd_size = 0.05
+			size_x = np.random.randn(1)*sd_size + mean_size
+			size_y = size_x*np.sqrt(1 - ecc**2)
+
+			ori = np.pi/4.#self.rng.random(size=1)*2*np.pi
+			cos_theta = np.cos(ori)
+			sin_theta = np.sin(ori)
+
+			phi_x = 0.5#self.rng.random(size=1)
+			phi_y = 0.5#self.rng.random(size=1)
+			x_on = distance(x+phi_x)
+			x_of = distance(x + phi_x + 0*self.rng.choice([-1,+1],size=1) * 0.3)
+			y = distance(y+phi_y)
+			y_on,y_of = y,y
+
+			x_on2 = (x_on*cos_theta - y*sin_theta) #* size_x
+			y_on = (x_on*sin_theta + y*cos_theta) #* size_y
+			x_on = x_on2
+			print("x_on",x_on)
+
+			x_of2 = (x_of*cos_theta - y*sin_theta) #* size_x
+			y_of = (x_of*sin_theta + y*cos_theta) #* size_y
+			x_of = x_of2
+			# print("xon",x_on**2)
+
+			input_on = np.abs(x_on)#gaussian(x_on,y_on,0.2)
+			input_off = gaussian(x_of,y_of,0.2)
+
+			input_patterns = np.swapaxes(np.stack([input_on,input_off]).reshape(2,-1),0,1)
+			return input_patterns
+
 
 class Inputs_lgn(Inputs):
 	'''
@@ -218,12 +266,12 @@ class Inputs_lgn(Inputs):
 	'''
 	def __init__(self, size, Version, random_seed):
 		super().__init__(size,Version,random_seed)
-	
+		self.rng = np.random.RandomState(self.random_seed*5101+2023)
 	def create_matrix(self, inp_params, profile):
 		return super().create_matrix(inp_params, profile)
 
 	def create_lgn_input(self, inp_params, profile, Wret_to_lgn):
-		rng = np.random.RandomState(self.random_seed*5101+202)
+		
 		if "white_noise" in profile:
 			inp_ret = self.create_matrix(inp_params, profile)
 
@@ -246,18 +294,25 @@ class Inputs_lgn(Inputs):
 		elif "moving_grating" in profile:
 			inp_ret = self.create_matrix(inp_params, "moving_grating")
 
+		elif "localized_waves" in profile:
+			inp_ret = self.create_matrix(inp_params, profile)
+			
+
 		## convolve input with Retina-to-LGN connections
 		## and swap axes such that lgn.shape = 2 x dimensions
-		if Wret_to_lgn.ndim==2:
-			lgn = np.dot(Wret_to_lgn,inp_ret)
-			lgn = np.swapaxes(lgn,0,1)
+		if "localized_waves" not in profile:
+			if Wret_to_lgn.ndim==2:
+				lgn = np.dot(Wret_to_lgn,inp_ret)
+				lgn = np.swapaxes(lgn,0,1)
+			else:
+				lgn = np.stack([np.dot(Wret_to_lgn[0,...],inp_ret[:,0,...]),\
+				 				np.dot(Wret_to_lgn[1,...],inp_ret[:,1,...])])
 		else:
-			lgn = np.stack([np.dot(Wret_to_lgn[0,...],inp_ret[:,0,...]),\
-			 				np.dot(Wret_to_lgn[1,...],inp_ret[:,1,...])])
+			lgn = np.swapaxes(inp_ret,0,1)
 
 		## normalise lgn input to SD=1 and shift its mean to positive value
 		if ("online" in profile):
-			if "moving_grating" not in profile:
+			if "white_noise" in profile:
 				# if True:
 				# 	lgn /= np.nanstd(lgn,axis=1)[:,None]
 				# 	## lgn += -np.nanmin(lgn,axis=(1))[:,None] + 1
@@ -277,7 +332,7 @@ class Inputs_lgn(Inputs):
 				lgn[0,:] *= 1.
 				lgn[1,:] *= inp_params["onoff_rel_weight"]
 				## make input positive and slight diff in mean between on and off
-				lgn += 10 + 0.5*rng.randn(2)[:,None]
+				lgn += 10 #+ 0.5*self.rng.randn(2)[:,None]
 				# lgn = np.clip(lgn,0,np.nanmax(lgn))
 
 		else:
@@ -300,7 +355,10 @@ class Inputs_lgn(Inputs):
 
 	def apply_ONOFF_bias(self,lgn,inp_params):
 		## OFF bias regions
-		exp_off_dominant = 1.
+		exp_off_dominant_on = 1.
+		exp_off_dominant_of = 1.
+		exp = np.array([1.,1.])
+		rng = np.random.RandomState(self.random_seed*5101+202)
 		if "off_bias_strength" in inp_params.keys():
 			if inp_params["off_bias_strength"]>0:
 				N = int(self.size[0]) #cast to int, otherwise it's tf int
@@ -315,12 +373,28 @@ class Inputs_lgn(Inputs):
 				off_dominant *= inp_params["off_bias_strength"]/np.nanstd(off_dominant)
 
 				## multiplicative
-				exp_off_dominant = np.exp(off_dominant)
+				# exp_off_dominant = 1+off_dominant #np.exp(off_dominant)
+				## changes local mean and std:
 				# lgn[0,:] /= exp_off_dominant
-				# lgn[1,:] *= exp_off_dominant			
+				# lgn[1,:] *= exp_off_dominant
 
-		return np.stack([lgn[0,:]/exp_off_dominant,lgn[1,:]*exp_off_dominant])
+				## change local std
+				# exp_off_dominant_on = np.clip(exp_off_dominant,1,np.max(exp_off_dominant))
+				# exp_off_dominant_of = np.clip(1./exp_off_dominant,1,np.max(1./exp_off_dominant))
+				
+				## additive constant
+				exp_off_dominant_on = np.zeros_like(off_dominant)
+				exp_off_dominant_on[off_dominant>0] += inp_params["off_bias_strength"]
+				exp_off_dominant_of = np.zeros_like(off_dominant)
+				exp_off_dominant_of[off_dominant<0] += inp_params["off_bias_strength"]
 
+				exp = rng.choice([-1,1],size=2)
+
+		# return np.stack([lgn[0,:]*exp_off_dominant_on**exp[0],\
+		# 				 lgn[1,:]*exp_off_dominant_of**exp[1]])
+
+		return np.stack([lgn[0,:]+exp_off_dominant_on*exp[0],\
+						 lgn[1,:]+exp_off_dominant_of*exp[1]])
 
 
 if __name__=="__main__":
@@ -332,7 +406,7 @@ if __name__=="__main__":
 	Wret_to_lgn_params["sigma"] = 0.4*rA
 	N = 25
 	random_seed = 19
-	Inp_params.update({"Nsur" : 100})
+	Inp_params.update({"Nsur" : 2})
 	Wret_to_lgn_params.update({"mean_eccentricity"	:	0.9,
 								"SD_eccentricity"	:	0.05,
 								"SD_size"			:	0.05,
@@ -348,7 +422,7 @@ if __name__=="__main__":
 		# rng_seed = Version*1000 + i
 		rng_seed = random_seed*1000 + i
 		one_stimulus = Inputs_lgn((N,N),1,rng_seed).create_lgn_input(\
-						Inp_params, "white_noise_online", Wret_to_lgn)
+						Inp_params, "localized_waves_online", Wret_to_lgn)
 		lgn.append( one_stimulus )
 	lgn = np.swapaxes(np.swapaxes(np.array(lgn),0,1),1,2)
 	print("lgn",lgn.shape)
@@ -432,25 +506,25 @@ if __name__=="__main__":
 	plt.colorbar(im,ax=ax)
 	print("Avg Peak CC",cc_avg[:,:,N//2,N//2])
 	
-	fit_params,fitted_gauss,_ = analysis_tools.determine_LGN_input_correlations_scale(None,diff)
-	fitted_gauss = fitted_gauss.reshape(diff.shape)
-	print("fit_params",fit_params)
-	fig = plt.figure()
-	fig.suptitle("Gaussian fit to LGN input correlation difference")
-	ax = fig.add_subplot(131)
-	im=ax.imshow(diff,interpolation="nearest",cmap="RdBu_r",vmin=-0.75,vmax=0.75)
-	plt.colorbar(im,ax=ax)
-	ax.contour(fitted_gauss,5,colors="b")
-	ax = fig.add_subplot(132)
-	im=ax.imshow(fitted_gauss,interpolation="nearest",cmap="RdBu_r",vmin=-0.75,vmax=0.75)
-	plt.colorbar(im,ax=ax)
-	ax.contour(diff,5,colors="b")
-	ax = fig.add_subplot(133)
-	ax.plot(diff[N//2,:]/np.nanmax(diff),'b',label="Data")
-	ax.plot(fitted_gauss[N//2,:],'r',label="Fit")
-	ax.plot(diff[:,N//2]/np.nanmax(diff),'b--',label="Data")
-	ax.plot(fitted_gauss[:,N//2],'r--',label="Fit")
-	ax.legend(loc="best")
+	# fit_params,fitted_gauss,_ = analysis_tools.determine_LGN_input_correlations_scale(None,diff)
+	# fitted_gauss = fitted_gauss.reshape(diff.shape)
+	# print("fit_params",fit_params)
+	# fig = plt.figure()
+	# fig.suptitle("Gaussian fit to LGN input correlation difference")
+	# ax = fig.add_subplot(131)
+	# im=ax.imshow(diff,interpolation="nearest",cmap="RdBu_r",vmin=-0.75,vmax=0.75)
+	# plt.colorbar(im,ax=ax)
+	# ax.contour(fitted_gauss,5,colors="b")
+	# ax = fig.add_subplot(132)
+	# im=ax.imshow(fitted_gauss,interpolation="nearest",cmap="RdBu_r",vmin=-0.75,vmax=0.75)
+	# plt.colorbar(im,ax=ax)
+	# ax.contour(diff,5,colors="b")
+	# ax = fig.add_subplot(133)
+	# ax.plot(diff[N//2,:]/np.nanmax(diff),'b',label="Data")
+	# ax.plot(fitted_gauss[N//2,:],'r',label="Fit")
+	# ax.plot(diff[:,N//2]/np.nanmax(diff),'b--',label="Data")
+	# ax.plot(fitted_gauss[:,N//2],'r--',label="Fit")
+	# ax.legend(loc="best")
 
 
 	lgn = lgn.reshape(2,N,N,-1)

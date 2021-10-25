@@ -18,7 +18,7 @@ from bettina.modeling.ori_dev_model.tools import misc,update_params_dict
 def plot_rf_sr_sc(version_list,load_external_from,show_fullfield):
 	# version_list = [0]
 	# version_list = np.arange(32,56)
-	rA = 0.25
+	rA = 0.2
 
 	N = len(version_list)
 	ncol = np.ceil(np.sqrt(N))
@@ -48,7 +48,7 @@ def plot_rf_sr_sc(version_list,load_external_from,show_fullfield):
 			else:
 				file_dir = data_dir + "layer4/v{v}/".format(v=version)
 			params = pickle.load(open(file_dir + "config_v{v}.p".format(v=version),"rb"))
-			params = update_params_dict.update_params(params)
+			update_params_dict.update_params(params)
 			
 			Nlgn = params["Nlgn"]
 			N4 = params["N4"]

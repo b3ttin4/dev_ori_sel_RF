@@ -14,11 +14,15 @@ parser.add_argument("--sI", dest='sI', required=False, type=float)
 parser.add_argument("--rC", dest='rC', required=False, type=float)
 
 ## learning/plasticity
-parser.add_argument("--mult_norm", dest="multiplicative_normalisation", required=False, type=str)
+parser.add_argument("--norm", dest='normalisation_mode_lgn', required=False, type=str,\
+					help="str, 'xalpha', 'x' or 'alpha' ")
+parser.add_argument("--mult_norm", dest="multiplicative_normalisation_lgn", required=False,\
+					type=str)
 parser.add_argument("--betaP", dest='beta_P', required=False, type=float, nargs="+")
 parser.add_argument("--gamma_lgn", dest='gamma_lgn', required=False, type=float)
 parser.add_argument("--runtime", dest='runtime', required=False, type=float)
-parser.add_argument("--sim", dest='simulate_activity', required=False, type=int)
+parser.add_argument("--sim", dest='simulate_activity',\
+					help="'dynamics','antolik_etal','steady_state'",required=False, type=str)
 parser.add_argument("--patt_dur", dest='pattern_duration', required=False, type=int)
 parser.add_argument("--avg_no_inp", dest='avg_no_inp', required=False, type=int)
 
@@ -26,6 +30,7 @@ parser.add_argument("--avg_no_inp", dest='avg_no_inp', required=False, type=int)
 parser.add_argument("--nonlin", dest='nonlinearity', required=False, type=str,\
 					help=" 'rectifier', 'linear' or 'powerlaw' ")
 parser.add_argument("--wrec", dest='Wrec_mode', required=False, type=str)
+parser.add_argument("--w4to4_ew", dest='w4to4_ew', required=False, type=float)
 parser.add_argument("--w4to23", dest='W4to23_mode', required=False, type=str)
 parser.add_argument("--w23to4", dest='W23to4_mode', required=False, type=str)
 parser.add_argument("--w23to23", dest='W23to23_mode', required=False, type=str)
@@ -36,12 +41,13 @@ parser.add_argument("--noise_rec", dest='noise_rec', required=False, type=float)
 parser.add_argument("--aEE", help="ampl of rec E to E in L4", dest='aEE', required=False,\
 					type=float)
 parser.add_argument("--rec_conn_het", dest='rec_conn_het',required=False,type=str)
+parser.add_argument("--rec_conn_mean_ecc", dest='rec_conn_mean_ecc',required=False,type=float)
 parser.add_argument("--w4to23_plastic",dest="W4to23_plastic",required=False,nargs="?",\
 					const=True,default=False,type=bool)
 parser.add_argument("--w4to23_width",help="multiplic factor to width of L4 to L23 conn",\
 					dest="w4to23_width",required=False,type=float)
 parser.add_argument("--w23to4_ampl", help="multiplic factor to ampl of L23 to L4 conn",\
-					dest="w23to4_ampl", required=False, type=float)
+					dest="w23to4_ampl",required=False,type=float)
 
 
 ## LGN input
@@ -50,6 +56,8 @@ parser.add_argument("--Wret_to_LGN_profile", dest='Wret_to_LGN_profile',\
 parser.add_argument("--MH_strength", dest='MH_strength', required=False, type=float)
 parser.add_argument("--onoff_rel_weight", dest='onoff_rel_weight', required=False,\
 					 type=float, nargs="+")
+parser.add_argument("--onoff_corr_factor", dest='onoff_corr_factor', required=False,\
+					 type=float)
 parser.add_argument("--off_bias_strength", dest='off_bias_strength', required=False,\
 					 type=float,help="float, between 0 to 1", nargs="+")
 parser.add_argument("--off_bias_region_size", dest='off_bias_region_size', required=False,\
@@ -57,8 +65,10 @@ parser.add_argument("--off_bias_region_size", dest='off_bias_region_size', requi
 parser.add_argument("--lgn_corr_het", dest='lgn_corr_het',required=False,type=str)
 parser.add_argument("--connectivity_type", dest='connectivity_type',required=False,type=str)
 parser.add_argument("--Wlim", dest='Wlim', required=False, type=float)
-parser.add_argument("--norm", dest='normalisation_mode', required=False, type=str,\
-					help="str, 'xalpha', 'x' or 'alpha' ")
+parser.add_argument("--expanse_time", dest='expanse_time', required=False, type=int)
+
+
+
 
 
 ## ARBOR variations
@@ -67,6 +77,9 @@ parser.add_argument("--arbor_profile",dest='arbor_profile',required=False,type=s
 parser.add_argument("--arbor_ampl",dest='arbor_ampl',required=False,type=float,default=None,\
 					nargs="+")
 
+
+parser.add_argument("--plasticity_rule", dest="plasticity_rule",required=False,type=str)
+parser.add_argument("--test_lowDsubset", dest='test_lowDsubset',required=False,type=bool)
 
 ## saving tools
 parser.add_argument("--saving_stepsize", dest='saving_stepsize',required=False,type=int)

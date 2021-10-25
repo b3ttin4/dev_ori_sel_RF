@@ -29,15 +29,15 @@ if __name__=="__main__":
 	from bettina.modeling.ori_dev_model.tools import analysis_tools,misc,update_params_dict
 
 	## set up system
-	RF_mode = "gabor"#"load_from_external"#"gabor"#"initialize"
-	system_mode = "one_layer" #"two_layer" "one_layer"
+	RF_mode = "initialize"#"load_from_external"#"gabor"#"initialize"
+	system_mode = "two_layer" #"two_layer" "one_layer"
 	connectivity_type = "EI"
 	N = 20
-	Version = 18
-	load_location = "aws"
+	Version = 9
+	load_location = "habanero"
 
 	T_pd = 1000
-	gamma_ff = 0.01#config_dict["gamma_lgn"]
+	gamma_ff = 0.1#config_dict["gamma_lgn"]
 
 	
 	if RF_mode=="load_from_external":
@@ -45,12 +45,21 @@ if __name__=="__main__":
 		## load parameters
 		if load_location=="habanero":
 			if os.environ["USER"]=="bh2757":
-				load_path = data_dir + "two_layer/v{v}/".format(v=Version)
+				if system_mode=="two_layer":
+					load_path = data_dir + "two_layer/v{v}/".format(v=Version)
+				else:
+					load_path = data_dir + "layer4/v{v}/".format(v=Version)
 			else:
 				# load_path = data_dir + "two_layer/habanero/v{v}/".format(v=Version)
-				load_path =\
-				 "/media/bettina/Seagate Portable Drive/physics/columbia/projects/" +\
-				 "ori_dev_model/data/two_layer/habanero/v{v}/".format(v=Version)
+				if system_mode=="two_layer":
+					load_path =\
+					 "/media/bettina/Seagate Portable Drive/physics/columbia/projects/" +\
+					 "ori_dev_model/data/two_layer/habanero/v{v}/".format(v=Version)
+				else:
+					load_path =\
+					 "/media/bettina/Seagate Portable Drive/physics/columbia/projects/" +\
+					 "ori_dev_model/data/layer4/habanero/v{v}/".format(v=Version)
+
 		elif load_location=="aws":
 			# load_path = data_dir + "two_layer/aws/v{v}/".format(v=Version)
 			load_path =\
@@ -59,7 +68,7 @@ if __name__=="__main__":
 		else:
 			load_path = data_dir + "two_layer/v{v}/".format(v=Version)
 		config_dict = pickle.load(open(load_path + "config_v{v}.p".format(v=Version),"rb"))
-		config_dict = update_params_dict.update_params(config_dict)
+		update_params_dict.update_params(config_dict)
 		if "plastic" not in config_dict["W4to23_params"].keys():
 			config_dict["W4to23_params"]["plastic"] = False
 			config_dict["W4to23_params"]["arbor_profile"] = "gaussian"
@@ -82,18 +91,20 @@ if __name__=="__main__":
 							"N4" : N4,
 							"Nret" : Nret})
 		config_dict["tau"] = 0.2
+		config_dict["W4to4_params"]["sigma_factor"] = 0.5
 		config_dict["W4to4_params"]["max_ew"] = 0.95
-		config_dict["W23_params"]["max_ew"] = 1.02
+		# config_dict["W23_params"]["max_ew"] = 1.02
 		# config_dict["W4to23_params"]["aEE"] *= 2
-		config_dict["W4to23_params"]["sigma_EE"] = 0.15
-		config_dict["W4to23_params"]["sigma_IE"] = 0.15
-		config_dict["W4to23_params"]["aEE"] *= 2
-		config_dict["W4to23_params"]["aIE"] *= 2
-		config_dict["W4to23_params"]["max_ew"] = "orig"
-		config_dict["W23to4_params"]["aEE"] *= 5
-		config_dict["W23to4_params"]["aIE"] *= 5
-		config_dict["W23to4_params"]["max_ew"] = "orig"
-		suffix = "_ff*2_fb*5_init"
+		# config_dict["W4to23_params"]["sigma_EE"] = 0.15
+		# config_dict["W4to23_params"]["sigma_IE"] = 0.15
+		# config_dict["W4to23_params"]["aEE"] *= 2
+		# config_dict["W4to23_params"]["aIE"] *= 2
+		# config_dict["W4to23_params"]["max_ew"] = "orig"
+		# config_dict["W23to4_params"]["aEE"] *= 5
+		# config_dict["W23to4_params"]["aIE"] *= 5
+		# config_dict["W23to4_params"]["max_ew"] = "orig"
+		# config_dict["W4to23_params"]["r_A"] = 0.3
+		suffix = ""#"_ff*2_fb*5_init"
 		pdf_path = image_dir + "grating_responses/gabor/"
 	misc.ensure_path(pdf_path)
 
@@ -101,8 +112,7 @@ if __name__=="__main__":
 	dt = config_dict["dt"]
 	t = np.arange(0,T_pd/dt,1).astype(int)
 	config_dict["Inp_params"].update({"input_type" : "moving_grating_online"})
-	# config_dict["Inp_params"].update({"input_type" : "white_noise_online"})
-	config_dict["W4to23_params"]["r_A"] = 0.3
+	config_dict["Inp_params"].update({"input_type" : "white_noise_online"})
 	last_timestep = t[-1]
 	config_dict.update({
 						"last_timestep" : last_timestep,
@@ -114,7 +124,6 @@ if __name__=="__main__":
 	kwargs = {
 				## parameters for moving gratings
 				"num_freq" : 1,
-				"num_oris" : 4,
 				"spat_frequencies" : np.array([80,]),#40,60,90
 				"orientations" : np.linspace(0,np.pi,4,endpoint=False),
 				"Nsur" : 10,
@@ -124,7 +133,7 @@ if __name__=="__main__":
 	# lgn += 0.1
 	lgn -= np.nanmin(lgn) #- 0.5
 	print("lgn",lgn.shape)
-	print("lgn",lgn.shape,np.nanmean(lgn,axis=(0,1,2,4)),np.nanstd(lgn,axis=(0,1,2,4)))
+	# print("lgn",lgn.shape,np.nanmax(lgn,axis=(0,1,2,4)),np.nanstd(lgn,axis=(0,1,2,4)))
 	
 	# _,Wlgn_to_4,_,_,_,_,_,_,_,_,_,_ = n.system
 	# sf = Wlgn_to_4[0,...] - Wlgn_to_4[1,...]
@@ -151,12 +160,12 @@ if __name__=="__main__":
 		def dynamics_system(y,inp_ff,Wff,W4to4,W4to23,\
 							W23to23,W23to4,gamma_rec,gamma_ff,N4,N23,tau):
 			return dynamics_np.dynamics_onelayer(y,inp_ff,Wff,W4to4,gamma_rec,gamma_ff,N4,\
-												tau,fio=fio_powerlaw)
+												tau,fio=fio_rect)
 		if connectivity_type=="EI":
 			def dynamics_system(y,inp_ff,Wff,W4to4,W4to23,\
 								W23to23,W23to4,gamma_rec,gamma_ff,N4,N23,tau):
 				return dynamics_np.dynamics_onelayer_fullinput(y,inp_ff,Wff,W4to4,gamma_rec,\
-																gamma_ff,N4,tau,fio=fio_powerlaw)
+																gamma_ff,N4,tau,fio=fio_rect)
 		W4to23 = 0
 		W23to4 = 0
 		W23to23= 0
@@ -172,7 +181,7 @@ if __name__=="__main__":
 							W23to23,W23to4,gamma_rec,gamma_ff,N4,N23,tau):
 			return dynamics_np.dynamics_twolayer(y,inp_ff,Wff,W4to4,W4to23,W23to23,\
 												 W23to4,gamma_rec,gamma_ff,N4,N23,tau,\
-												 fio=fio_powerlaw)
+												 fio=fio_rect)
 
 		if connectivity_type=="EI":
 			def dynamics_system(y,inp_ff,Wff,W4to4,W4to23,\
@@ -180,9 +189,10 @@ if __name__=="__main__":
 				return dynamics_np.dynamics_twolayer_fullinput(y,inp_ff,Wff,W4to4,W4to23,\
 																W23to23,W23to4,gamma_rec,\
 												 				gamma_ff,N4,N23,tau,\
-												 				fio=fio_powerlaw)
+												 				fio=fio_rect)
 
 		# W23to4 *= 0
+
 	################################# DYNAMICS ###############################
 	if config_dict["tau"]!=1:
 		tau = np.ones((N4**2*2*Nvert),dtype=float)
@@ -190,9 +200,13 @@ if __name__=="__main__":
 	else:
 		tau = 1.
 
+
+	I = np.linalg.inv(np.diagflat(np.ones(N4*N4*2*Nvert)) - W4to4)
+
 	print("Wlgn_to_4",Wlgn_to_4.shape)
 	gamma_rec = config_dict["gamma_4"]
 	temporal_duration = 500
+	num_reps = t[-1]/temporal_duration
 	for i,spat_frequency in enumerate(kwargs["spat_frequencies"]):
 		all_phase = []
 		act_last_timestep = []
@@ -204,19 +218,38 @@ if __name__=="__main__":
 			It = [l40*0]
 			for kt in t:
 				lgn_t = int((kt//temporal_duration)%kwargs["Nsur"])#
-				# inp = lgn[:2,:,0]
-				inp = lgn[:,i,j,lgn_t,:]
+				inp = lgn[:2,:,0]
+				# inp = lgn[:,:,i,j,lgn_t]
 				dy,_ = dynamics_system(y,inp,Wlgn_to_4,W4to4,W4to23,W23to23,\
-									 	W23to4,gamma_rec,gamma_ff,N4*N4*Nvert,N23**2,tau)
+									 W23to4,gamma_rec,gamma_ff,N4*N4*Nvert,N23**2,tau)
 				y = y + dt*dy
 				yt.append( y )
 
-				## ff input
+				# ff input
 				ff_inp_E = gamma_ff*(np.dot(Wlgn_to_4[0,:,:],inp[0,:])+\
 									 np.dot(Wlgn_to_4[1,:,:],inp[1,:]))
 				ff_inp_I = gamma_ff*(np.dot(Wlgn_to_4[2,:,:],inp[0,:])+\
 									 np.dot(Wlgn_to_4[3,:,:],inp[1,:]))				
 				It.append(np.concatenate([ff_inp_E,ff_inp_I]))
+
+			# l4_I_avg = 0
+			# for k in range(lgn.shape[-1]):
+			# 	l4_I = np.dot(I[:,:N4*N4*Nvert], np.dot(Wlgn_to_4[0,:,:],lgn[0,:,i,j,k]) +\
+			# 	 		np.dot(Wlgn_to_4[1,:,:],lgn[1,:,i,j,k])) * gamma_ff
+			# 	if connectivity_type=="EI":
+			# 		l4_I_toI = np.dot(I[:,N4*N4*Nvert:], np.dot(Wlgn_to_4[2,:,:],lgn[0,:,i,j,k]) +\
+			# 		 			np.dot(Wlgn_to_4[3,:,:],lgn[1,:,i,j,k])) * gamma_ff
+			# 		l4_I += l4_I_toI
+			# 	l4_I = np.clip(l4_I,0,np.nanmax(l4_I))
+			# 	l4_I_avg += l4_I
+			# yt = np.ones_like(t)
+			
+			# ff_inp_E = gamma_ff*(np.dot(Wlgn_to_4[0,:,:],lgn[0,:,i,j,:])+\
+			# 					 np.dot(Wlgn_to_4[1,:,:],lgn[1,:,i,j,:]))
+			# ff_inp_I = gamma_ff*(np.dot(Wlgn_to_4[2,:,:],lgn[0,:,i,j,:])+\
+			# 					 np.dot(Wlgn_to_4[3,:,:],lgn[1,:,i,j,:]))
+			# It = np.stack([np.repeat(ff_inp_E,num_reps,axis=1),np.repeat(ff_inp_E,num_reps,axis=1)])
+
 			yt = np.array(yt)
 			It = np.array(It)
 			print("It",It.shape,yt.shape)
@@ -321,17 +354,18 @@ if __name__=="__main__":
 				idmin = np.argmin(mod_ratio[k])
 				ymin,xmin = idmin//N4,idmin%N4
 
-				if k<2:
+				if (k<2 and config_dict["Inp_params"]["input_type"]=="moving_grating_online"):
 					## raw input trace
 					ax = fig.add_subplot(nrows,ncols,1)
 					ax.set_ylabel("Raw input")
 					ax.set_xlabel("Timesteps")
-					ax.plot(np.nanmean(lgn[0,i,j,:,:],axis=1),"-k",label="avg")
-					ax.plot(np.nanmean(lgn[1,i,j,:,:],axis=1),"--k",label="avg")
-					ax.plot(lgn[0,i,j,:,:].reshape(-1,N4,N4*Nvert)[:,ymax,xmax],"-",c="gray",label="max mod")
-					ax.plot(lgn[1,i,j,:,:].reshape(-1,N4,N4*Nvert)[:,ymax,xmax],"--",c="gray",label="max mod")
+					ax.plot(np.nanmean(lgn[0,:,i,j,:],axis=1),"-k",label="avg")
+					ax.plot(np.nanmean(lgn[1,:,i,j,:],axis=1),"--k",label="avg")
+					ax.plot(lgn[0,:,i,j,:].reshape(-1,N4,N4*Nvert)[:,ymax,xmax],"-",c="gray",label="max mod")
+					ax.plot(lgn[1,:,i,j,:].reshape(-1,N4,N4*Nvert)[:,ymax,xmax],"--",c="gray",label="max mod")
 					ax.legend(loc="best")
 
+				if (k<2):
 					## input trace to L4 (raw input convolved with RF)
 					ax = fig.add_subplot(nrows,ncols,2)
 					ax.set_ylabel("Input to LGN")
@@ -372,7 +406,7 @@ if __name__=="__main__":
 				ax = fig.add_subplot(nrows,ncols,6)
 				ax.set_title("Activity last timestep")
 				# im=ax.imshow(yfinal_list[k],interpolation="nearest",cmap="binary")
-				im=ax.imshow(np.nanmean(yt_pop[-2500:,:,:],axis=0),interpolation="nearest",cmap="binary")
+				im=ax.imshow(np.nanmean(yt_pop[-temporal_duration*kwargs["Nsur"]:,:,:],axis=0),interpolation="nearest",cmap="binary")
 				plt.colorbar(im,ax=ax)
 
 				ax = fig.add_subplot(nrows,ncols,7)
@@ -388,7 +422,7 @@ if __name__=="__main__":
 				plt.close(fig)
 
 
-				axes[0].plot(np.sort(yt_pop[-2500:,:].mean(0).flatten()),\
+				axes[0].plot(np.sort(yt_pop[-temporal_duration*kwargs["Nsur"]:,:].mean(0).flatten()),\
 							np.linspace(0,1,yfinal_list[k].size),'-',label=label)
 				axes[1].plot(np.sort(mod_ratio[k].flatten()),\
 							np.linspace(0,1,mod_ratio[k].size),'-',label=label)
@@ -399,14 +433,14 @@ if __name__=="__main__":
 			axes[1].set_ylabel("Cumulative distribution")
 			axes[1].set_xlim(0,1)
 			if system_mode=="two_layer":
-				axes[2].plot(yt_list[0][-2500:,:,:].mean(0).flatten(),\
-							yt_list[2][-2500:,:,:].mean(0).flatten(),'or',alpha=0.4,\
+				axes[2].plot(yt_list[0][-temporal_duration*kwargs["Nsur"]:,:,:].mean(0).flatten(),\
+							yt_list[2][-temporal_duration*kwargs["Nsur"]:,:,:].mean(0).flatten(),'or',alpha=0.4,\
 							rasterized=True,label="E")
-				axes[2].plot(yt_list[1][-2500:,:,:].mean(0).flatten(),\
-							yt_list[3][-2500:,:,:].mean(0).flatten(),'ob',alpha=0.4,\
+				axes[2].plot(yt_list[1][-temporal_duration*kwargs["Nsur"]:,:,:].mean(0).flatten(),\
+							yt_list[3][-temporal_duration*kwargs["Nsur"]:,:,:].mean(0).flatten(),'ob',alpha=0.4,\
 							rasterized=True,label="I")
-				axes[2].plot([0,np.max(yt_list[0][-2500:,:,:].mean(0))],\
-							 [0,np.max(yt_list[0][-2500:,:,:].mean(0))],"--",c="gray")
+				axes[2].plot([0,np.max(yt_list[0][-temporal_duration*kwargs["Nsur"]:,:,:].mean(0))],\
+							 [0,np.max(yt_list[0][-temporal_duration*kwargs["Nsur"]:,:,:].mean(0))],"--",c="gray")
 				axes[3].plot(mod_ratio[0].flatten(),mod_ratio[2].flatten(),'or',alpha=0.4,\
 							rasterized=True,label="E")
 				axes[3].plot(mod_ratio[1].flatten(),mod_ratio[3].flatten(),'ob',alpha=0.4,\
@@ -447,6 +481,23 @@ if __name__=="__main__":
 			pp.savefig(fig,dpi=300,bbox_inches="tight")
 			plt.close(fig)
 
+			## VARIABILITY IN RESPONSE PATTERN DURING ONE GRATING OSCILLATION
+			oscillation_duration = (last_timestep+1)/temp_freq
+			timesteps = np.array([last_timestep-oscillation_duration,\
+								 last_timestep-3/4.*oscillation_duration,\
+								 last_timestep-1./2*oscillation_duration,\
+								 last_timestep-1./4*oscillation_duration]).astype(int)
+			ncol,nrow = len(timesteps),1
+			fig = plt.figure(figsize=(6*ncol,5*nrow))
+			for k in range(ncol):
+				ax = fig.add_subplot(nrow,ncol,k+1)
+				ax.set_title("t={}".format(timesteps[k]))
+				im=ax.imshow(yt[timesteps[k],:L4_size].reshape(N4,N4),interpolation="nearest",\
+							cmap="binary")
+				plt.colorbar(im,ax=ax)
+			pp.savefig(fig,dpi=300,bbox_inches="tight")
+			plt.close(fig)
+
 			pp.close()
 			print("plot done",orientation,spat_frequency)
 
@@ -455,7 +506,7 @@ if __name__=="__main__":
 		## compute orientation tuning and selectivity
 		all_phase = np.array(all_phase)
 		act_last_timestep = np.array(act_last_timestep)
-		num_oris = kwargs["num_oris"]
+		num_oris = len(kwargs["orientations"])
 		if system_mode=="one_layer":
 			labels = ["L4,E","L4,I"]
 			L4_size = N4*N4*Nvert
@@ -507,7 +558,7 @@ if __name__=="__main__":
 		pp.savefig(dpi=300,bbox_inches="tight")
 		plt.close(fig)
 
-		ncols,nrows = 3,1
+		ncols,nrows = 4,1
 		orientations_binning = np.concatenate([kwargs["orientations"],np.array([np.pi])])
 		# orientations_binning -= np.pi/2./num_oris
 		for j,(final_act,jall_phase) in enumerate(zip(final_act_list,all_phase_list)):
@@ -531,17 +582,24 @@ if __name__=="__main__":
 			# im=ax.imshow(misc.plot_complex_map(opm),interpolation="nearest")
 			im=ax.imshow(ori,cmap="hsv",interpolation="nearest",vmin=0,vmax=np.pi)
 			plt.colorbar(im,ax=ax,orientation="horizontal")
+
 			ax = fig.add_subplot(nrows,ncols,2)
+			opm_fft = np.abs(np.fft.fftshift(np.fft.fft2(opm - np.nanmean(opm))))
+			ax.set_title("Spectrum Orientation preference map {}".format(labels[j]))
+			im=ax.imshow(opm_fft,cmap="binary",interpolation="nearest")
+			plt.colorbar(im,ax=ax,orientation="horizontal")
+
+			ax = fig.add_subplot(nrows,ncols,3)
 			ax.set_title("Preferred absolute phase {}".format(labels[j]))
 			im=ax.imshow(pref_phase_full,interpolation="nearest",cmap="hsv",vmin=0,vmax=2*np.pi)
 			plt.colorbar(im,ax=ax,orientation="horizontal")
-			ax = fig.add_subplot(nrows,ncols,3)
-			ax.plot(kwargs["orientations"],final_act[:,0,0],'-ok',label="(0,0)")
-			ax.plot(kwargs["orientations"],final_act[:,N4//2,0],'-om',label="(N/2,0)")
-			ax.plot(kwargs["orientations"],final_act[:,N4//2,N4//2],'-og',label="(N/2,N/2)")
-			ax.set_xlabel("Orientations (rad)")
-			ax.set_ylabel("Exemplary tuning curve")
-			ax.legend(loc="best")
+			
+			ax = fig.add_subplot(nrows,ncols,4)
+			opm_fft = np.abs(np.fft.fftshift(np.fft.fft2(pref_phase_full - np.nanmean(pref_phase_full))))
+			ax.set_title("Spectrum Preferred absolute phase {}".format(labels[j]))
+			im=ax.imshow(opm_fft,cmap="binary",interpolation="nearest")
+			plt.colorbar(im,ax=ax,orientation="horizontal")
+
 			pp.savefig(dpi=300,bbox_inches="tight")
 			plt.close(fig)
 

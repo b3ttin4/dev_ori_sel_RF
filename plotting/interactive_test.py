@@ -28,6 +28,7 @@ from copy import copy
 
 from bettina.modeling.ori_dev_model import data_dir,image_dir,scan_simulations
 from bettina.modeling.ori_dev_model.tools import misc,analysis_tools
+from bettina.modeling.ori_dev_model.plotting import helper_definitions as hd
 
 
 #TODO:
@@ -137,7 +138,8 @@ class Main_window(QMainWindow):
 		## DATA PARAMETERS
 		self.load_external_from = load_external_from
 		# self.initVERSIONS = [537,538,539,540,541,542,543,544,545,546,547]
-		self.initVERSIONS = [1000,]
+		self.initVERSIONS = np.arange(901,907)
+		self.initVERSIONS = np.arange(884,896)
 		self.varied_params = np.array(['Wrec',"Nvert"])
 		self.text_to_key = {'L4 rec. conn. scheme' 		: 	'Wrec',
 							"# vertical units"			:	'Nvert',
@@ -252,22 +254,27 @@ class Main_window(QMainWindow):
 		self.rbtn_sum.setChecked(False)
 		self.rbtn_ind.toggled.connect(self.change_plotstyle)
 		grid.addWidget(self.radiobutton_label,1,0,1,1)
-		grid.addWidget(self.rbtn_ind,1,1,1,1)
-		grid.addWidget(self.rbtn_sum,1,2,1,1)
+		grid.addWidget(self.rbtn_ind,1,2,1,1)
+		grid.addWidget(self.rbtn_sum,1,3,1,1)
 
 		
 		## combobox of metrics to be plotted
 		self.combobox_label = QLabel('Metric')
 		self.combobox = QComboBox()
-		self.combobox.addItem("I - RF")
-		self.combobox.addItem("I - OPM")
-		self.combobox.addItem("I - Phase")
-		self.combobox.addItem("I - L4")
-		self.combobox.addItem("I - Selectivity")
-		self.combobox.addItem("S - RF_weight")
-		self.combobox.addItem("S - RF_dist_center")
+		self.combobox.addItem("RF")
+		self.combobox.addItem("Orientation")
+		self.combobox.addItem("Relative phase")
+		self.combobox.addItem("L4")
+		self.combobox.addItem("Selectivity")
+		self.combobox.addItem("ONOFF ratio")
+		self.combobox.addItem("ONOFF segregation")
+		self.combobox.addItem("ON-OFF Distance to center")
+		self.combobox.addItem("Center value RF")
+		self.combobox.addItem("Envelope width")
+		self.combobox.addItem("Log aspect ratio")
+		self.combobox.addItem("# half cycles")
 		self.combobox.currentTextChanged.connect(self.combobox_changed)
-		grid.addWidget(self.combobox_label,1,3,1,1)
+		grid.addWidget(self.combobox_label,1,4,1,1)
 		grid.addWidget(self.combobox,1,4,1,1)
 
 
@@ -276,15 +283,15 @@ class Main_window(QMainWindow):
 		self.versionlabel = QLabel('Simulation ID')
 		s = ' '
 		self.versionbox.setText( s.join( [str(item) for item in self.initVERSIONS] ) )
-		grid.addWidget(self.versionlabel, 3, 0,1,1)
-		grid.addWidget(self.versionbox, 3, 1,1,1)
+		grid.addWidget(self.versionlabel,3,0,1,1)
+		grid.addWidget(self.versionbox,3,1,1,1)
 		self.versionbox.returnPressed.connect(self.load_data)
 
 		## Button to make parameter selection
 		self.pushButton = QPushButton("Simulation settings")
 		self.pushButton.clicked.connect(self.show_simulation_setting_setter)
 		self.dialog = Parameter_selection_window( self.param_range, self.arg_labels)
-		grid.addWidget(self.pushButton, 0, 2,1,1)
+		grid.addWidget(self.pushButton,0,2,1,1)
 
 		self.mainlayout.addLayout(grid)
 
@@ -292,14 +299,15 @@ class Main_window(QMainWindow):
 		self.dialog.show()
 
 	def change_plotstyle(self):
-		print("change_plotstyle",self.rbtn_ind.isChecked(),self.rbtn_sum.isChecked())
+		# print("change_plotstyle",self.rbtn_ind.isChecked(),self.rbtn_sum.isChecked())
+		self.on_draw()
 
 	def combobox_changed(self):
-		text = self.combobox.currentText()
-		if "S - " in text:
-			self.rbtn_sum.setChecked(True)
-		elif "I - " in text:
-			self.rbtn_ind.setChecked(True)
+		# text = self.combobox.currentText()
+		# if text in hd.summary_plot_measures:
+		# 	self.rbtn_sum.setChecked(True)
+		# elif text in hd.individual_plot_measures:
+		# 	self.rbtn_ind.setChecked(True)
 		self.on_draw()
 
 	def create_status_bar(self):
@@ -408,15 +416,16 @@ class Main_window(QMainWindow):
 			filepath = data_dir + "layer4/"
 			cluster_name = "local"
 		else:
-			filepath = "/media/bettina/Seagate Portable Drive/physics/columbia/projects" + \
+			# Seagate Portable Drive
+			filepath = "/media/bettina/TOSHIBA EXT/physics/columbia/projects" + \
 					   "/ori_dev_model/data/layer4/{}/".format(load_external_from)
 			cluster_name = load_external_from
 
 		filename = filepath + "observables/observables_v{}.hdf5".format(Version)
 		observables = misc.load_from_hdf5(cluster_name,[Version,],filename)
-		print("Version",Version,observables[Version])
+		observables = observables[Version]
 		params = pickle.load(open(filepath +"pickle_files/config_v{v}.p".format(\
-							v=Version),"rb"))
+						 	v=Version),"rb"))
 
 		y = np.load(filepath + "y_files/y_v{}.npz".format(Version))
 		if "Wlgn_to_4" in y.files:
@@ -437,8 +446,7 @@ class Main_window(QMainWindow):
 		# 					"layer4/habanero/pickle_files/config_v{v}.p".format(\
 		# 					v=VERSION),"rb"))
 
-		observables.update({"l4" : l4, "Wlgn_to_4" : Wlgn_to_4})
-		print("Version",Version,observables.keys())
+		observables.update({"L4" : l4, "Wlgn_to_4" : Wlgn_to_4})
 		return observables,params
 
 	def load_data(self):
@@ -448,17 +456,15 @@ class Main_window(QMainWindow):
 		delete_id = []
 		for i,VERSION in enumerate(self.VERSIONS):
 			try:
-				dataset,params = self.load_results(VERSION,load_external_from)
-				self.loaded_data[VERSION] = {}
-				self.loaded_data[VERSION] = dataset
-				# self.loaded_data[VERSION]["l4"] = dataset["l4"]
+				observables,params = self.load_results(VERSION,load_external_from)
+				self.loaded_data[VERSION] = observables
 				self.loaded_params[VERSION] = params
 			except:
 				misc.PrintException()
 				delete_id.append(i)
 				print("File for {} not found.".format(VERSION))
 
-		self.VERSIONS = np.delete(self.VERSIONS,i)
+		self.VERSIONS = np.delete(self.VERSIONS,delete_id)
 
 
 	def filter_simulation_id(self):
@@ -517,64 +523,28 @@ class Main_window(QMainWindow):
 				if (i*self.ncol+j)<num_plots:
 					self.axes.append(self.fig.add_subplot(gs_ovdh[i,j]))
 
+		chosen_key = self.combobox.currentText()
+
 		if self.rbtn_ind.isChecked():
-			if self.combobox.currentText()=="I - OPM":
-				cmap = "hsv"
+
+			if self.combobox.currentText() in hd.individual_plot_measures:
+				cmap = hd.cmap_dict[chosen_key]
 				for ax_id,VERSION in enumerate(self.VERSIONS):
 					N4 = self.loaded_params[VERSION]["N4"]
 					Nvert = self.loaded_params[VERSION]["Nvert"]
-					array = self.loaded_data[VERSION]["Orientation"].reshape(N4,N4*Nvert)
+					array = self.loaded_data[VERSION][chosen_key]#
+					if array.ndim==3:
+						array = array[0,:,:]
+					elif array.ndim==1:
+						array = array.reshape(N4,N4*Nvert)
 					im = self.axes[ax_id].imshow(array,interpolation='nearest',cmap=cmap)
 					plt.colorbar(im,ax=self.axes[ax_id])
 					Wrec_mode = self.loaded_params[VERSION]["W4to4_params"]["Wrec_mode"]
 					self.axes[ax_id].set_title("v{}".format(VERSION)+" "+Wrec_mode)
-
-			elif self.combobox.currentText()=="I - RF":
-				cmap = "RdBu_r"
-				for ax_id,VERSION in enumerate(self.VERSIONS):
-					array = self.loaded_data[VERSION]["RF"][0,:,:]
-					im = self.axes[ax_id].imshow(array,interpolation='nearest',cmap=cmap)
-					plt.colorbar(im,ax=self.axes[ax_id])
-					Wrec_mode = self.loaded_params[VERSION]["W4to4_params"]["Wrec_mode"]
-					self.axes[ax_id].set_title("v{}".format(VERSION)+" "+Wrec_mode)
-
-			elif self.combobox.currentText()=="I - Phase":
-				cmap = "binary"
-				for ax_id,VERSION in enumerate(self.VERSIONS):
-					N4 = self.loaded_params[VERSION]["N4"]
-					Nvert = self.loaded_params[VERSION]["Nvert"]
-					array = self.loaded_data[VERSION]["Relative phase"].reshape(N4,N4*Nvert)
-					im = self.axes[ax_id].imshow(array,interpolation='nearest',cmap=cmap)
-					plt.colorbar(im,ax=self.axes[ax_id])
-					Wrec_mode = self.loaded_params[VERSION]["W4to4_params"]["Wrec_mode"]
-					self.axes[ax_id].set_title("v{}".format(VERSION)+" "+Wrec_mode)
-
-			elif self.combobox.currentText()=="I - L4":
-				cmap = "binary"
-				for ax_id,VERSION in enumerate(self.VERSIONS):
-					N4 = self.loaded_params[VERSION]["N4"]
-					Nvert = self.loaded_params[VERSION]["Nvert"]
-					array = self.loaded_data[VERSION]["l4"][:N4*N4*Nvert].reshape(N4,N4*Nvert)
-					im = self.axes[ax_id].imshow(array,interpolation='nearest',cmap=cmap)
-					plt.colorbar(im,ax=self.axes[ax_id])
-					Wrec_mode = self.loaded_params[VERSION]["W4to4_params"]["Wrec_mode"]
-					self.axes[ax_id].set_title("v{}".format(VERSION)+" "+Wrec_mode)
-
-			elif self.combobox.currentText()=="I - Selectivity":
-				cmap = "binary"
-				# for ax_id,VERSION in enumerate(self.VERSIONS):
-				# 	N4 = self.loaded_params[VERSION]["N4"]
-				# 	Nvert = self.loaded_params[VERSION]["Nvert"]
-				# 	array = self.loaded_data[VERSION]["sel"][:N4*N4*Nvert].reshape(N4,N4*Nvert)
-				# 	im = self.axes[ax_id].imshow(array,interpolation='nearest',cmap=cmap)
-				# 	plt.colorbar(im,ax=self.axes[ax_id])
-				# 	Wrec_mode = self.loaded_params[VERSION]["W4to4_params"]["Wrec_mode"]
-				# 	self.axes[ax_id].set_title("v{}".format(VERSION)+" "+Wrec_mode)
-				pass
-
 
 
 		elif self.rbtn_sum.isChecked():
+
 			x_list,x_uni,cmaps = [],[],[]
 			for i,xvalue in enumerate(x_value_list):
 				xvalues = scan_simulations.get_all_parameters(self.loaded_params,\
@@ -584,37 +554,37 @@ class Main_window(QMainWindow):
 				cmaps.append(self.define_colormap(len(np.unique(xvalues))))
 				self.axes[i+self.ncol].set_ylabel("Cumulative distribution")
 				self.axes[i].set_xlabel(xvalue)
-				
-			if self.combobox.currentText()=="S - ON/OFF ratio":
+			
+			## Histogram			
+			if self.combobox.currentText() in hd.histogram_list:
 				for i,xvalue in enumerate(x_value_list):
-					self.axes[i+self.ncol].set_xlabel("On-Off subfield weight")
-					self.axes[i].set_ylabel("Avg On-Off subfield weight")
-				## quantify size of ON/OFF subfield (simple vs single sign RFs)
+					self.axes[i].set_ylabel("Average")
 				for loc_id,VERSION in enumerate(self.VERSIONS):
-					measure = self.loaded_data[VERSION]["ON/OFF ratio"]
+					measure = self.loaded_data[VERSION][chosen_key]
+					measure = measure[np.isfinite(measure)]
 					for j,xvalue in enumerate(x_value_list):
 						self.axes[j].plot(x_list[j][loc_id],np.nanmean(measure),'o')
+						self.axes[j].set_ylim(bottom=0)
 						color_id = np.searchsorted(x_uni[j],x_list[j][loc_id],side="left")
 						color = cmaps[j].to_rgba(color_id)
-						self.axes[j+self.ncol].plot(np.sort(measure),\
-													np.linspace(0,1,len(measure)),'-',c=color)
-					
-			elif self.combobox.currentText()=="S - RF_dist_center":
+						n,_,_ = plt.hist(measure,bins=hd.bins_dict[chosen_key])
+						self.axes[j+self.ncol].plot(hd.bins_dict[chosen_key][1:],n,'-o',c=color,\
+													label="{}={}".format(xvalue,x_uni[j][color_id]))
+						self.axes[j+self.ncol].legend(loc="best")
+
+			## plot cumulative distribution
+			elif self.combobox.currentText() in hd.cumulative_dist_list:
 				for i,xvalue in enumerate(x_value_list):
-					self.axes[i+self.ncol].set_xlabel("Distance to RF center on-off")
-					self.axes[i].set_ylabel("Avg Distance to RF center on-off")
+					self.axes[i].set_ylabel("Average")
 				for loc_id,VERSION in enumerate(self.VERSIONS):
-					measure = self.loaded_data[VERSION]["ON-OFF Distance to center"]
+					measure = self.loaded_data[VERSION][chosen_key]
+					measure = measure[np.isfinite(measure)]
 					for j,xvalue in enumerate(x_value_list):
 						self.axes[j].plot(x_list[j][loc_id],np.nanmean(measure),'o')
 						color_id = np.searchsorted(x_uni[j],x_list[j][loc_id],side="left")
 						color = cmaps[j].to_rgba(color_id)
 						self.axes[j+self.ncol].plot(np.sort(measure),\
 													np.linspace(0,1,len(measure)),"-",c=color)
-
-
-
-	
 
 
 

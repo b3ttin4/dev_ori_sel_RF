@@ -24,71 +24,51 @@ def runjobs_oridevModel_Cluster():
 	
 	# Vectors for iteration
 	script_name = "run_twolayer"
-	SI = np.array([1.0])#([0.2,0.5,1.0,1.4])#0.5,1.0,1.5,2.5])
-	RC = np.array([0.3])#([0.1,0.2,0.5,0.95])#np.array([0.2,0.3,0.5,0.8])
-	r_A = np.array([0.15])
-	
-	betaP = np.array([0.0005])
-	runtime = np.array([100000])
-	saving_stepsize = np.array([2])
-	avg_no_inp = np.array([1])
-	gamma_lgn = np.array([0.005])
-
-	## Recurrent layer
-	pattern_duration = np.array([2500])
-	nonlin = np.array(["powerlaw"]) ##(default: "rectifier")
-	## 1pop: "Gaussian_inv", "Gaussian"
-	## 2pop: "Gaussian2pop", "Gaussian_prob2pop", "Gaussian_prob_cluster2pop"
-	## 	     "Gaussian_prob2pop","Gaussian_sparse2pop","Gaussian_prob_density2pop"
-	w4to4 = np.array(["Gaussian2pop"])
-	# density = np.array([0.6])
-	# ncluster = np.array([3,5,10])
-	Nvert = np.array([1])
-	# w23to4_ampl = np.array([2./0.9,4./0.9])
-	w4to23_width = np.array([0.075/0.1])
-
-
-	## FF parameters
-	onoff_rel_weight = np.array([1.])
-	#"Mexican-hat"#Gaussian#"Gaussian_broadOFF"
-	Wret_to_LGN_profile = np.array(["Gaussian"])
-	# MH_strength = np.array([1.])
-	arbor_profile = np.array(["gaussian"])
-	# lgn_corr_het = np.array(["independent"])
-	connectivity_type = np.array(["EI"])
-	# Wlim = np.array([4])
 
 	iterator_dict = {
-					"sI" : SI,
-					"rC" : RC,
-					"rA" : r_A,
-					"betaP" : betaP,
-					"gamma_lgn" : gamma_lgn,
+					"sI" : np.array([0.3]), #([0.2,0.5,1.0,1.4]),
+					"rC" : np.array([0.3]), #([0.1,0.2,0.5,0.95]),
+					"rA" : np.array([0.2]), #"0.2 0.25",,
+					"betaP" : np.array([0.0004]), ##(default: 0.005),
+
+					# "mult_norm" : np.array(["homeostatic"]),	#default: x,
+					# "norm" : np.array(["x","xalpha","alpha"]),
+
+					"runtime" : np.array([600000]), #1000000,
+					# "avg_no_inp" : np.array([20]),
+					# "onoff_rel_weight" : np.array([2.]),
+					# "off_bias_strength" : np.array([1.5,2.]),
+					# "off_bias_region_size" : np.array([0.5]),
 					
-					"runtime" : runtime,
-					"avg_no_inp" : avg_no_inp,
-					"patt_dur" : pattern_duration,
-					# "onoff_rel_weight" : onoff_rel_weight,
+					# "sim" : np.array([0]), ##(default: 1),
+					# "patt_dur" : np.array([1]), ##(default: 2500),
 
-					"nonlin" : nonlin,
-					"Nvert" : Nvert,
-					"wrec" : w4to4,
-					# "density" : density,
-					# "ncluster" : ncluster,
-					# "w23to4" : w23to4,
-					# "w4to23" : w4to23,
-					# "w23to23" : w23to23,
-					# "w23to4_ampl" : w23to4_ampl,
-					"w4to23_width" : w4to23_width,
+					## layer 4
+					# "nonlin" : np.array(["powerlaw"]), ##(default: "rectifier")
+					# "gamma_lgn" : gamma_lgn,
+					"wrec" : np.array(["Gaussian2pop"]), ## default: Gaussian2pop,
+					# "w4to4_ew" : np.array([1.02]),	## default: 0.95
+					# "density" : np.array([0.3,0.7]),
+					# "noise_rec" : np.array([0.2,0.4,0.6]),
+					# "ncluster" : np.array([3,5]),
+					# "Nvert" : np.array([1]),	##default: 1,
+					# "aEE" : np.array([8.]),
+					# "rec_conn_het" : np.array(["independent"]),
+					# "rec_conn_mean_ecc" : np.array([0.7]),
 
-					"Wret_to_LGN_profile" : Wret_to_LGN_profile,
-					"arbor_profile" : arbor_profile,
-					# "MH_strength" : MH_strength,
-					# "lgn_corr_het"	: lgn_corr_het,
-					"connectivity_type" : connectivity_type,
-					# "Wlim" : Wlim,
+					## Layer 23 
+					"w23to4_ampl" : np.array([1.,2.]),
+					# "w4to23_width" : np.array([0.075/0.1]),
 
-					"saving_stepsize" : saving_stepsize,
+					## FF connections
+					# "Wret_to_LGN_profile" : np.array(["Gaussian"]), #default: Gaussian,
+					# "MH_strength" : np.array([1.]),
+					"arbor_profile" : ["heaviside"],
+					# "lgn_corr_het"	: np.array(["independent"]),
+					"connectivity_type" : np.array(["EI"]),
+					# "arbor_ampl" : np.array(["1. 1.2","1. 1.5","1. 2."]), #"1. 2.",
+
+					"saving_stepsize" : np.array([50]),
 					}
 
 
@@ -116,9 +96,9 @@ def runjobs_oridevModel_Cluster():
 		var_string += " --{:s}".format(key) + " {}"
 
 	count=0;
-	for var_setting in product(*var_list):
+	for i,var_setting in enumerate(product(*var_list)):
 		time.sleep(0.2)
-		Version = misc.get_version(data_dir + "two_layer/",version=None,readonly=False)
+		Version = 0+i#misc.get_version(data_dir + "two_layer/",version=None,readonly=False)
 		print("Version={}".format(Version));sys.stdout.flush()
 		c1 = "{:s} --V {:.0f}".format(inpath,Version) + var_string.format(*var_setting)
 

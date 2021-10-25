@@ -17,6 +17,7 @@ import os
 import sys
 from scipy import linalg
 import h5py
+from skimage.filters import threshold_otsu
 
 import matplotlib
 matplotlib.use("agg")
@@ -51,6 +52,8 @@ def plotting_routines(Version,load_external_from=""):
 		file_dir = data_dir + "layer4/v{v}/".format(v=Version)
 	params = pickle.load(open(file_dir + "config_v{v}.p".format(v=Version),"rb"))
 	update_params_dict.update_params(params)
+
+	# params["Inp_params"]["off_bias_strength"] = 1.
 
 	## ======================== NETWORK PARAMETERS ========================
 	sc = params["Wret_to_lgn_params"]["sigma"]
@@ -87,6 +90,8 @@ def plotting_routines(Version,load_external_from=""):
 	## number of input patterns needed
 	print("# of stimuli: {}".format(params["Inp_params"]["Nsur"]));sys.stdout.flush()
 
+	params["W4to4_params"]["sigma_factor"] = 0.25
+
 	last_timestep = params["runtime"]/dt
 	params.update({
 					"last_timestep" : last_timestep,
@@ -97,6 +102,7 @@ def plotting_routines(Version,load_external_from=""):
 	n = network.Network(Version,params)
 	lgn = n.generate_inputs(full_lgn_output=True,last_timestep=last_timestep,\
 							same_EI_input=True)
+	print("lgn",lgn.shape)
 	Wret_to_lgn,Wlgn_to_4_init,arbor_on,arbor_off,arbor2,_,W4to4 = n.system
 
 	Wlgn_to_4_init = Wlgn_to_4_init.reshape(num_lgn_paths,N4**2*Nvert,Nlgn**2)
@@ -133,32 +139,36 @@ def plotting_routines(Version,load_external_from=""):
 							params["W4to4_params"]["Wrec_mode"])
 	else:
 		W4to4,output_dict = W4.create_matrix(params["W4to4_params"],\
-							 params["W4to4_params"]["Wrec_mode"],r_A=x_I)
-		# if not simulate_activity:
-		# 	W4to4 = np.linalg.inv(np.diagflat(np.ones(N4*N4*Nvert)) - W4to4)
+							params["W4to4_params"]["Wrec_mode"],r_A=x_I)
 
 
 
-	if (l4_t is None and not params["Inp_params"]["simulate_activity"]):
-		l4_t = []
-		W4to4_EE = W4to4[:N4*N4*Nvert,:N4*N4*Nvert]
-		for i in range(lgn.shape[2]):
-			iWff = i#int(np.floor(i/params["Inp_params"]["avg_no_inp"]))
-			if (iWff)<Wlgn_to_4_t.shape[0]:
-				l4 = np.dot(W4to4_EE, np.dot(Wlgn_to_4_t[iWff,0,:,:],lgn[0,:,i])) +\
-					 np.dot(W4to4_EE, np.dot(Wlgn_to_4_t[iWff,1,:,:],lgn[1,:,i]))
-				l4_t.append(l4 * gamma_lgn)
-		l4_t = np.array(l4_t)
-		l4 = l4_t[-1,:]
-		print("l4_t={}, Wlgn_to_4={}, lgn={}, avg_no_inp={}".format(l4_t.shape,\
-			Wlgn_to_4_t.shape,lgn.shape,avg_no_inp))
+	# if (l4_t is None and not params["Inp_params"]["simulate_activity"]):
+	# 	I_crt = np.linalg.inv(np.diagflat(np.ones(N4*N4*2*Nvert)) - W4to4)
+	# 	l4_t = np.dot(I_crt[:,:N4**2*Nvert], np.dot(Wlgn_to_4[0,:,:],lgn[0,:,:]) +\
+	# 	  						 			 np.dot(Wlgn_to_4[1,:,:],lgn[1,:,:]))
+
+	# 	if num_lgn_paths==4:
+	# 		l4_toI = np.dot(I_crt[:,N4**2*Nvert:], np.dot(Wlgn_to_4[2,:,:],lgn[2,:,:]) +\
+	# 		  						 			   np.dot(Wlgn_to_4[3,:,:],lgn[3,:,:]))
+	# 		l4_t += l4_toI
+	# 	l4_t *= gamma_lgn
+	# 	l4I_t = l4_t[:N4**2,:]
+	# 	l4_t = l4_t[N4**2:,:]
+
+	# 	l4 = l4_t[-1,:]
+	# 	print("l4_t={}, Wlgn_to_4={}, lgn={}, avg_no_inp={}".format(l4_t.shape,\
+	# 			Wlgn_to_4_t.shape,lgn.shape,avg_no_inp))
 
 
 	#################################################################################
 	############################# FIGURES ###########################################
-	norm = mcol.TwoSlopeNorm(vcenter=0)
+	try:
+		norm = mcol.TwoSlopeNorm(vcenter=0)
+	except:
+		norm = None
 
-	if not os.path.exists(image_dir_param + "connectivity.pdf"):
+	if True:#not os.path.exists(image_dir_param + "connectivity.pdf"):
 		pp = PdfPages(image_dir_param + "connectivity.pdf")
 		fig_list = plot_functions.plot_connectivity(W4to4,N4=N4,Nvert=Nvert,\
 					output_dict=output_dict,Wrec_mode=params["W4to4_params"]["Wrec_mode"])
@@ -335,8 +345,8 @@ def plotting_routines(Version,load_external_from=""):
 
 
 	## temporal behaviour, dyn_test
-	if ("Wt" in keys and (not os.path.exists(image_dir_param + "dyn_test.pdf")) and\
-	 	l4_t is not None):
+	if True:#("Wt" in keys and (not os.path.exists(image_dir_param + "dyn_test.pdf")) and\
+	 	# l4_t is not None):
 		l4_t = l4_t.reshape(-1,N4**2*Nvert)
 		pp = PdfPages(image_dir_param + "dyn_test.pdf")
 		ncol,nrow = 4,2
@@ -459,7 +469,7 @@ def plotting_routines(Version,load_external_from=""):
 	
 
 	## correlation between cortical layer and lgn input, corr_ff_rec
-	if ("Wt" in keys and not os.path.exists(image_dir_param + "corr_ff_rec.pdf")):
+	if True:#("Wt" in keys and not os.path.exists(image_dir_param + "corr_ff_rec.pdf")):
 		pp = PdfPages(image_dir_param + "corr_ff_rec.pdf")
 		if "cct" in keys:
 			cc_recff = yt["cct"]
@@ -476,39 +486,80 @@ def plotting_routines(Version,load_external_from=""):
 			plt.close(fig)
 
 		
-		inp_on,inp_of = 0,0
+		inp_on,inp_of = [],[]
 		for it in range(lgn.shape[2]):
 		# for it in range(lgn.shape[2]-1,lgn.shape[2]):
 			Wtime = it//avg_no_inp + 1
 			try:
-				inp_on += np.clip(np.dot(Wlgn_to_4_t[Wtime,0,...],lgn[0,:,it]).reshape(N4,N4*Nvert),0,1000)
-				inp_of += np.clip(np.dot(Wlgn_to_4_t[Wtime,1,...],lgn[1,:,it]).reshape(N4,N4*Nvert),0,1000)
+				inp_on.append(np.dot(Wlgn_to_4_t[Wtime,0,...],lgn[0,:,it]).reshape(N4,N4*Nvert))
+				inp_of.append(np.dot(Wlgn_to_4_t[Wtime,1,...],lgn[1,:,it]).reshape(N4,N4*Nvert))
 			except:
 				pass
+		inp_on = np.array(inp_on)
+		inp_of = np.array(inp_of)
 
-		fig = plt.figure(figsize=(12,5))
+		ncol,nrow = 4,2
+		fig = plt.figure(figsize=(ncol*6,nrow*5))
 		fig.suptitle("Avg Wlgn_to_4_t * lgn")
-		ax = fig.add_subplot(121)
-		ax.set_title("on")
-		im=ax.imshow(inp_on/lgn.shape[2],interpolation="nearest",cmap="binary")
+		ax = fig.add_subplot(nrow,ncol,1)
+		ax.set_title("on avg")
+		im=ax.imshow(np.nanmean(inp_on,axis=0),interpolation="nearest",cmap="binary")
 		plt.colorbar(im,ax=ax)
-		ax = fig.add_subplot(122)
-		ax.set_title("off")
-		im=ax.imshow(inp_of/lgn.shape[2],interpolation="nearest",cmap="binary")
+		ax = fig.add_subplot(nrow,ncol,2)
+		ax.set_title("off avg")
+		im=ax.imshow(np.nanmean(inp_of,axis=0),interpolation="nearest",cmap="binary")
 		plt.colorbar(im,ax=ax)
+		ax = fig.add_subplot(nrow,ncol,3)
+		ax.set_title("on std")
+		im=ax.imshow(np.nanstd(inp_on,axis=0),interpolation="nearest",cmap="binary")
+		plt.colorbar(im,ax=ax)
+		ax = fig.add_subplot(nrow,ncol,4)
+		ax.set_title("off std")
+		im=ax.imshow(np.nanstd(inp_of,axis=0),interpolation="nearest",cmap="binary")
+		plt.colorbar(im,ax=ax)
+		
+		nmax = 200
+		ax = fig.add_subplot(nrow,ncol,5)
+		ax.set_title("on, avg first {} patterns".format(nmax))
+		im=ax.imshow(np.nanmean(inp_on[:nmax,:],axis=0),interpolation="nearest",cmap="binary")
+		plt.colorbar(im,ax=ax)
+		ax = fig.add_subplot(nrow,ncol,6)
+		ax.set_title("off, avg first {} patterns".format(nmax))
+		im=ax.imshow(np.nanmean(inp_of[:nmax,:],axis=0),interpolation="nearest",cmap="binary")
+		plt.colorbar(im,ax=ax)
+		ax = fig.add_subplot(nrow,ncol,7)
+		ax.set_title("on, std first {} patterns".format(nmax))
+		im=ax.imshow(np.nanstd(inp_on[:nmax,:],axis=0),interpolation="nearest",cmap="binary")
+		plt.colorbar(im,ax=ax)
+		ax = fig.add_subplot(nrow,ncol,8)
+		ax.set_title("off, std first {} patterns".format(nmax))
+		im=ax.imshow(np.nanstd(inp_of[:nmax,:],axis=0),interpolation="nearest",cmap="binary")
+		plt.colorbar(im,ax=ax)
+		
 		pp.savefig(fig,dpi=300,bbox_inches='tight')
 		plt.close(fig)
+
 		
-		fig = plt.figure(figsize=(12,5))
-		fig.suptitle("avg over no_inp={}".format(avg_no_inp))
-		ax = fig.add_subplot(121)
-		ax.set_title("SD={:.2f}".format(np.nanstd(np.nanmean(lgn[0,:,-avg_no_inp:],axis=1))))
-		im=ax.imshow(np.nanmean(lgn[0,:,-avg_no_inp:],axis=1).reshape(Nlgn,Nlgn),\
+		ncol,nrow = 4,1
+		fig = plt.figure(figsize=(ncol*6,nrow*5))
+		ax = fig.add_subplot(nrow,ncol,1)
+		ax.set_title("Avg ON, SD={:.2f}".format(np.nanstd(np.nanmean(lgn[0,:,:],axis=1))))
+		im=ax.imshow(np.nanmean(lgn[0,:,:],axis=1).reshape(Nlgn,Nlgn),\
 					interpolation="nearest",cmap="binary")
 		plt.colorbar(im,ax=ax)
-		ax = fig.add_subplot(122)
-		ax.set_title("SD={:.2f}".format(np.nanstd(np.nanmean(lgn[1,:,-avg_no_inp:],axis=1))))
-		im=ax.imshow(np.nanmean(lgn[1,:,-avg_no_inp:],axis=1).reshape(Nlgn,Nlgn),\
+		ax = fig.add_subplot(nrow,ncol,2)
+		ax.set_title("Avg OFF, SD={:.2f}".format(np.nanstd(np.nanmean(lgn[1,:,:],axis=1))))
+		im=ax.imshow(np.nanmean(lgn[1,:,:],axis=1).reshape(Nlgn,Nlgn),\
+					interpolation="nearest",cmap="binary")
+		plt.colorbar(im,ax=ax)
+		ax = fig.add_subplot(nrow,ncol,3)
+		ax.set_title("SD ON")
+		im=ax.imshow(np.nanstd(lgn[0,:,:],axis=1).reshape(Nlgn,Nlgn),\
+					interpolation="nearest",cmap="binary")
+		plt.colorbar(im,ax=ax)
+		ax = fig.add_subplot(nrow,ncol,4)
+		ax.set_title("SD OFF")
+		im=ax.imshow(np.nanstd(lgn[1,:,:],axis=1).reshape(Nlgn,Nlgn),\
 					interpolation="nearest",cmap="binary")
 		plt.colorbar(im,ax=ax)
 		pp.savefig(fig,dpi=300,bbox_inches='tight')
@@ -548,7 +599,7 @@ def plotting_routines(Version,load_external_from=""):
 			for it in range(lgn.shape[2]):
 				Wtime = it//avg_no_inp + 1
 				l4_filt.append( np.dot(W4to4, np.dot(Wlgn_to_4_t[Wtime,0,...],lgn[0,:,it])) +\
-						np.dot(W4to4, np.dot(Wlgn_to_4_t[Wtime,1,...],lgn[1,:,it])))
+								np.dot(W4to4, np.dot(Wlgn_to_4_t[Wtime,1,...],lgn[1,:,it])))
 			l4_filt = np.array(l4_filt) * gamma_lgn
 
 			fig = plt.figure(figsize=(25,25))
@@ -566,27 +617,65 @@ def plotting_routines(Version,load_external_from=""):
 			plt.close(fig)
 			
 		## LGN INPUT
-		labels = ["LGN input to E","OFF LGN input to E","ON LGN input to I",\
-					"OFF LGN input to I"]
-		fig = plt.figure(figsize=(25,10))
-		fig.suptitle(labels[0])
+		labels = ["ON LGN input to E","OFF LGN input to E"]
 		n = np.min([10,lgn.shape[-1]])
-		print("lgn",lgn.shape,Wlgn_to_4_t.shape,params["saving_stepsize"])
-		lgn_first_patterns = []
+		timesteps_to_plot = np.linspace(0,n,n).astype(int)
+		lgn_first_patterns_on,lgn_first_patterns_of = [],[]
 		for istep in range(n):
-			dotproduct = gamma_lgn * ( np.dot(Wlgn_to_4_t[istep,0,...],lgn[0,:,istep]) + \
-									   np.dot(Wlgn_to_4_t[istep,1,...],lgn[1,:,istep]) )
-			lgn_first_patterns.append(dotproduct)
-		for istep in range(n):
-			dotproduct = gamma_lgn * ( np.dot(Wlgn_to_4_t[-n+istep-1,0,...],lgn[0,:,-n+istep]) + \
-						 			   np.dot(Wlgn_to_4_t[-n+istep-1,1,...],lgn[1,:,-n+istep]) )
-			lgn_first_patterns.append(dotproduct)
-		lgn_first_patterns = np.array(lgn_first_patterns)
-		lgn_first_patterns = lgn_first_patterns.reshape(2*n,N4,N4*Nvert)
+			iplot = timesteps_to_plot[istep]
+			if (iplot<Wlgn_to_4_t.shape[0] and iplot<lgn.shape[2]):
+				dotproduct_on = gamma_lgn * (np.dot(Wlgn_to_4_t[iplot,0,...],lgn[0,:,iplot]))
+				dotproduct_of = gamma_lgn * (np.dot(Wlgn_to_4_t[iplot,1,...],lgn[1,:,iplot]))
+				lgn_first_patterns_on.append(dotproduct_on)
+				lgn_first_patterns_of.append(dotproduct_of)
+		# for istep in range(n):
+		# 	dotproduct_on = gamma_lgn * (np.dot(Wlgn_to_4_t[-n+istep-1,0,...],lgn[0,:,-n+istep]))
+		# 	dotproduct_of = gamma_lgn * (np.dot(Wlgn_to_4_t[-n+istep-1,1,...],lgn[1,:,-n+istep]))
+		# 	lgn_first_patterns_on.append(dotproduct_on)
+		# 	lgn_first_patterns_of.append(dotproduct_of)
+		lgn_first_patterns_on = np.array(lgn_first_patterns_on).reshape(-1,N4,N4*Nvert)
+		lgn_first_patterns_of = np.array(lgn_first_patterns_of).reshape(-1,N4,N4*Nvert)
 
-		fig,_,_=plot_functions.grid_plot_twolayer(lgn_first_patterns,fig,ncol=n,nrow=2)
+		fig,_,_=plot_functions.grid_plot_twolayer(lgn_first_patterns_on,None,ncol=5,nrow=2)
+		fig.suptitle(labels[0])
 		pp.savefig(fig,dpi=300,bbox_inches='tight')
 		plt.close(fig)
+		fig,_,_=plot_functions.grid_plot_twolayer(lgn_first_patterns_of,None,ncol=5,nrow=2)
+		fig.suptitle(labels[1])
+		pp.savefig(fig,dpi=300,bbox_inches='tight')
+		plt.close(fig)
+
+
+		## CUMULATIVE LGN INPUT
+		labels = ["Cumul. ON LGN input to E","Cumul OFF LGN input to E"]
+		n = np.min([10,lgn.shape[-1]])
+		timesteps_to_plot = np.linspace(0,n,n).astype(int)
+		lgn_first_patterns_on,lgn_first_patterns_of = [],[]
+		dotproduct_on,dotproduct_of = 0,0
+		for istep in range(n):
+			iplot = timesteps_to_plot[istep]
+			if (iplot<lgn.shape[2] and iplot<Wlgn_to_4_t.shape[0]):
+				dotproduct_on += gamma_lgn * (np.dot(Wlgn_to_4_t[iplot,0,...],lgn[0,:,iplot]))
+				dotproduct_of += gamma_lgn * (np.dot(Wlgn_to_4_t[iplot,1,...],lgn[1,:,iplot]))
+				lgn_first_patterns_on.append(dotproduct_on/(istep+1))
+				lgn_first_patterns_of.append(dotproduct_of/(istep+1))
+		# for istep in range(n):
+		# 	dotproduct_on = gamma_lgn * (np.dot(Wlgn_to_4_t[-n+istep-1,0,...],lgn[0,:,-n+istep]))
+		# 	dotproduct_of = gamma_lgn * (np.dot(Wlgn_to_4_t[-n+istep-1,1,...],lgn[1,:,-n+istep]))
+		# 	lgn_first_patterns_on.append(dotproduct_on)
+		# 	lgn_first_patterns_of.append(dotproduct_of)
+		lgn_first_patterns_on = np.array(lgn_first_patterns_on).reshape(-1,N4,N4*Nvert)
+		lgn_first_patterns_of = np.array(lgn_first_patterns_of).reshape(-1,N4,N4*Nvert)
+
+		fig,_,_=plot_functions.grid_plot_twolayer(lgn_first_patterns_on,None,ncol=5,nrow=2)
+		fig.suptitle(labels[0])
+		pp.savefig(fig,dpi=300,bbox_inches='tight')
+		plt.close(fig)
+		fig,_,_=plot_functions.grid_plot_twolayer(lgn_first_patterns_of,None,ncol=5,nrow=2)
+		fig.suptitle(labels[1])
+		pp.savefig(fig,dpi=300,bbox_inches='tight')
+		plt.close(fig)
+
 
 		## AVERAGE ACTIVITY/INPUT
 		nrow,ncol = num_lgn_paths//2,4
@@ -604,8 +693,7 @@ def plotting_routines(Version,load_external_from=""):
 							cmap="binary")
 				plt.colorbar(im,ax=ax)
 
-		labels = ["Avg ON LGN input to E","Avg OFF LGN input to E","Avg ON LGN input to I",\
-					"Avg OFF LGN input to I"]
+		labels = ["Avg ON LGN to E","Avg OFF LGN to E","Avg ON LGN to I","Avg OFF LGN to I"]
 		for j in range(2):
 			ax = fig.add_subplot(nrow,ncol,2+j)
 			ax.set_title(labels[j])
@@ -792,23 +880,24 @@ def plotting_routines(Version,load_external_from=""):
 			pp.savefig(fig,dpi=300,bbox_inches="tight")
 			plt.close(fig)
 
-			## 100 snapshots of RF development
-			ncol,nrow = 3,3
+			## snapshots of RF development
+			ncol,nrow = 5,5
 			fig = plt.figure(figsize=(6*ncol,5*nrow))
 			fig.suptitle("Development of RF")
 			timesteps = Wlgn_to_4_t.shape[0]
-			timesteps_to_plot = np.arange(0,timesteps,1)
-			print("timesteps",timesteps)
+			timesteps_to_plot = np.linspace(1,1*ncol*nrow,ncol*nrow).astype(int)
+			print("timesteps",timesteps,timesteps_to_plot,Wlgn_to_4_t.shape)
 			for iplot in range(np.min([ncol*nrow,timesteps])):
 				istep = timesteps_to_plot[iplot]
-				ax = fig.add_subplot(nrow,ncol,1+iplot)
-				ax.set_title("Timestep={}".format(1+istep*params["saving_stepsize"]))
-				idsf = Wlgn_to_4_t[istep,0,...] - Wlgn_to_4_t[istep,1,...]
-				idsf = idsf.reshape(N4,N4*Nvert,Nlgn,Nlgn)
-				iRF,_,_,_ = analysis_tools.get_RF_form(idsf,N4,Nlgn,DA,calc_PF=False,\
-														Nvert=Nvert,mode="other")
-				im=ax.imshow(iRF,interpolation="nearest",cmap="RdBu_r",norm=norm)
-				plt.colorbar(im,ax=ax)
+				if istep<Wlgn_to_4_t.shape[0]:
+					ax = fig.add_subplot(nrow,ncol,1+iplot)
+					ax.set_title("Timestep={}".format(1+istep*params["saving_stepsize"]))
+					idsf = Wlgn_to_4_t[istep,0,...] - Wlgn_to_4_t[istep,1,...]
+					idsf = idsf.reshape(N4,N4*Nvert,Nlgn,Nlgn)
+					iRF,_,_,_ = analysis_tools.get_RF_form(idsf,N4,Nlgn,DA,calc_PF=False,\
+															Nvert=Nvert,mode="other")
+					im=ax.imshow(iRF,interpolation="nearest",cmap="RdBu_r")
+					plt.colorbar(im,ax=ax)
 			pp.savefig(fig,dpi=300,bbox_inches='tight')
 			plt.close(fig)
 
@@ -832,15 +921,15 @@ def plotting_routines(Version,load_external_from=""):
 				ax1 = fig.add_subplot(nrow,ncol,1+k)
 				ax1.set_title("t={}".format(kt))
 				ax2 = fig.add_subplot(nrow,ncol,1+k+ncol)
-				im=ax1.imshow(kRF[0,:,:],interpolation="nearest",cmap="RdBu_r",norm=norm)
+				im=ax1.imshow(kRF[0,:,:],interpolation="nearest",cmap="RdBu_r")
 				plt.colorbar(im,ax=ax1)
-				im=ax2.imshow(kPF[0,:,:],interpolation="nearest",cmap="RdBu_r",norm=norm)
+				im=ax2.imshow(kPF[0,:,:],interpolation="nearest",cmap="RdBu_r")
 				plt.colorbar(im,ax=ax2)
 			pp.savefig(fig,dpi=300,bbox_inches="tight")
 			plt.close(fig)
 
 			## conservation of ff weights, across x and alpha+i
-			ncol,nrow = 4,2
+			ncol,nrow = 5,2
 			fig = plt.figure(figsize=(6*ncol,5*nrow))
 			fig.suptitle("conservation of ff weights, across x and alpha+i")
 			for k,kt in enumerate([t0,t1,t2]):
@@ -860,81 +949,32 @@ def plotting_routines(Version,load_external_from=""):
 				ax2.legend(loc="best")
 				ax2.set_xlabel("Cortical units")
 				ax2.set_ylabel("Average weight")
-			ax1 = fig.add_subplot(nrow,ncol,ncol)
+			ax1 = fig.add_subplot(nrow,ncol,ncol-1)
 			ax1.set_title("t={}".format(kt))
 			im=ax1.imshow(np.sum(np.copy(mean_x).reshape(2,Nlgn,Nlgn),axis=0),\
 							interpolation="nearest",cmap="binary")
 			plt.colorbar(im,ax=ax1)
-			ax2 = fig.add_subplot(nrow,ncol,ncol*2)
+			ax2 = fig.add_subplot(nrow,ncol,ncol*2-1)
 			im=ax2.imshow(np.copy(mean_alpha).reshape(N4,N4),\
 							interpolation="nearest",cmap="binary")
 			plt.colorbar(im,ax=ax2)
+
+			mean_x_t =\
+			 np.nanmean(Wlgn_to_4_t[:,j*2:j*2+2,...],axis=2)
+			mean_alpha_t =\
+			 np.nanmean(Wlgn_to_4_t[:,j*2:j*2+2,...],axis=(1,3))
+			ax = fig.add_subplot(nrow,ncol,ncol)
+			ax.errorbar(np.arange(timesteps),np.nanmean(mean_x_t,axis=(1,2)),\
+						yerr=np.nanstd(mean_x_t,axis=(1,2)),fmt="+-")
+			ax.set_xlabel("Timesteps")
+			ax.set_ylabel("Avg weight summed over ON/OFF and x")
+			ax = fig.add_subplot(nrow,ncol,ncol*2)
+			ax.errorbar(np.arange(timesteps),np.nanmean(mean_alpha_t,axis=1),\
+						yerr=np.nanstd(mean_alpha_t,axis=1),fmt="+-")
+			ax.set_xlabel("Timesteps")
+			ax.set_ylabel(r"Avg weight summed over ON/OFF and $\alpha$")
 			pp.savefig(fig,dpi=300,bbox_inches="tight")
 			plt.close(fig)
-
-
-			## ON/OFF segregation
-			RF_seg = np.empty((N4,N4*Nvert))*np.nan
-			for k in range(N4):
-				for l in range(N4*Nvert):
-					R_on = np.sum(RF[1,k*DA:(k+1)*DA,l*DA:(l+1)*DA]>0)
-					R_off = np.sum(RF[2,k*DA:(k+1)*DA,l*DA:(l+1)*DA]>0)
-					counter =\
-						np.abs(RF[1,k*DA:(k+1)*DA,l*DA:(l+1)*DA] - RF[2,k*DA:(k+1)*DA,l*DA:(l+1)*DA])
-					num = RF[1,k*DA:(k+1)*DA,l*DA:(l+1)*DA] + RF[2,k*DA:(k+1)*DA,l*DA:(l+1)*DA]
-					## consider only units that respond to both dark and light stimuli
-					if (R_on>0 and R_off>0):
-						RF_seg[k,l] = np.nanmean(counter)/np.nanmean(num)
-			ncol,nrow = 2,1
-			fig = plt.figure(figsize=(6*ncol,5*nrow))
-			ax = fig.add_subplot(nrow,ncol,1)
-			ax.set_title("ON/OFF segregation")
-			im=ax.imshow(RF_seg,interpolation="nearest",cmap="binary",vmin=0,vmax=1)
-			plt.colorbar(im,ax=ax)
-			ax = fig.add_subplot(nrow,ncol,2)
-			ax.set_title("# units > 0.6={} of {}".format(np.sum(RF_seg>0.6),N4**2*Nvert))
-			ax.hist(RF_seg[np.isfinite(RF_seg)],bins=np.linspace(0,1,10))
-			ax.set_xlabel("ON/OFF segregation")
-			ax.set_ylabel("Number of units")
-			pp.savefig(fig,dpi=300,bbox_inches="tight")
-			plt.close(fig)
-
-
-			## ON/OFF ratio
-			RF_ratio = np.empty((2,N4,N4*Nvert))*np.nan
-			for k in range(N4):
-				for l in range(N4*Nvert):
-					R_on = np.sum(RF[1,k*DA:(k+1)*DA,l*DA:(l+1)*DA]>0)
-					R_off = np.sum(RF[2,k*DA:(k+1)*DA,l*DA:(l+1)*DA]>0)
-					R_on_max = np.nanmax(RF[1,k*DA:(k+1)*DA,l*DA:(l+1)*DA])
-					R_off_max = np.nanmax(RF[2,k*DA:(k+1)*DA,l*DA:(l+1)*DA])
-					R_on_mean = np.nanmean(RF[1,k*DA:(k+1)*DA,l*DA:(l+1)*DA])
-					R_off_mean = np.nanmean(RF[2,k*DA:(k+1)*DA,l*DA:(l+1)*DA])
-					## consider only units that respond to both dark and light stimuli
-					if (R_on>0 and R_off>0):
-						RF_ratio[0,k,l] = R_on_max/(R_on_max+R_off_max)
-						RF_ratio[1,k,l] = R_on_mean/(R_on_mean+R_off_mean)
-			ncol,nrow = 4,1
-			fig = plt.figure(figsize=(6*ncol,5*nrow))
-			ax = fig.add_subplot(nrow,ncol,1)
-			ax.set_title("ON/OFF ratio (max)")
-			im=ax.imshow(RF_ratio[0,:,:],interpolation="nearest",cmap="binary",vmin=0,vmax=1)
-			plt.colorbar(im,ax=ax)
-			ax = fig.add_subplot(nrow,ncol,2)
-			ax.hist(RF_ratio[0,np.isfinite(RF_ratio[0,:,:])],bins=np.linspace(0,1,10))
-			ax.set_xlabel("ON/OFF ratio (max)")
-			ax.set_ylabel("Number of units")
-			ax = fig.add_subplot(nrow,ncol,3)
-			ax.set_title("ON/OFF ratio (mean)")
-			im=ax.imshow(RF_ratio[1,:,:],interpolation="nearest",cmap="binary",vmin=0,vmax=1)
-			plt.colorbar(im,ax=ax)
-			ax = fig.add_subplot(nrow,ncol,4)
-			ax.hist(RF_ratio[1,np.isfinite(RF_ratio[1,:,:])],bins=np.linspace(0,1,10))
-			ax.set_xlabel("ON/OFF ratio (mean)")
-			ax.set_ylabel("Number of units")
-			pp.savefig(fig,dpi=300,bbox_inches="tight")
-			plt.close(fig)
-
 
 			## quantify on and off RF position scatter in LGN space
 			RF_array = (Wlgn_to_4[j*2,...] - Wlgn_to_4[j*2+1,...]).reshape(N4**2*Nvert,Nlgn,Nlgn)
@@ -1010,9 +1050,9 @@ def plotting_routines(Version,load_external_from=""):
 			centroids_on_off_RF = analysis_tools.get_center_of_mass_subfields(RF_array)
 			centroids_on_off_RF = centroids_on_off_RF.reshape(N4**2*Nvert,2,2)
 			dist_on_center = np.sqrt((DA//2 - centroids_on_off_RF[:,0,0])**2 +\
-			 					(DA//2 - centroids_on_off_RF[:,1,0])**2)
+			 						 (DA//2 - centroids_on_off_RF[:,1,0])**2)
 			dist_off_center = np.sqrt((DA//2 - centroids_on_off_RF[:,0,1])**2 +\
-			 					(DA//2 - centroids_on_off_RF[:,1,1])**2)
+			 						  (DA//2 - centroids_on_off_RF[:,1,1])**2)
 			dist_on_minus_off = dist_on_center - dist_off_center
 			## - RF value at center
 			rf_center_value = RF_array[:,DA//2,DA//2]
@@ -1022,13 +1062,13 @@ def plotting_routines(Version,load_external_from=""):
 					"-k",label="on")
 			ax.plot(np.sort(dist_off_center),np.linspace(0,1,len(dist_off_center)),\
 					"-m",label="off")
-			ax.set_xlabel("On distance to center")
+			ax.set_xlabel("Subfield distance to RF center")
 			ax.set_ylabel("Cumulative distribution")
 			ax.legend(loc="best")
 			ax = fig.add_subplot(132)
 			ax.plot(np.sort(dist_on_minus_off),np.linspace(0,1,len(dist_on_minus_off)),\
 					"-c",label="on-off")
-			ax.set_xlabel("On-Off distance to center")
+			ax.set_xlabel("On-Off distance to RF center")
 			ax.set_ylabel("Cumulative distribution")
 			ax.legend(loc="best")
 			ax = fig.add_subplot(133)
@@ -1039,6 +1079,23 @@ def plotting_routines(Version,load_external_from=""):
 			ax.legend(loc="best")
 			pp.savefig(fig,dpi=300,bbox_inches="tight")
 			plt.close(fig)
+
+			# if params["Inp_params"]["off_bias_strength"]>0:
+			# 	lgn_sd = np.nanstd(lgn,axis=2).reshape(2,Nlgn,Nlgn)
+
+			# 	minval = np.nanmin(lgn_sd)
+			# 	maxval = np.nanmax(lgn_sd)
+			# 	lgn_sd_int = ((lgn_sd-minval)/(maxval-minval)*255).astype("uint8")
+			# 	otsu_thr,_ = cv2.threshold(lgn_sd_int.flatten(),0,255,cv2.THRESH_OTSU)
+			# 	otsu_thr = otsu_thr/255.*(maxval-minval)+minval
+
+			# 	on_dom = lgn_sd[0,:,:] > otsu_thr
+			# 	of_dom = lgn_sd[1,:,:] > otsu_thr
+
+
+
+
+
 
 			## quantify size of ON/OFF subfield (simple vs single sign RFs)
 			RF_array = RF_array.reshape(N4,N4*Nvert,DA,DA)
@@ -1131,6 +1188,7 @@ def plotting_routines(Version,load_external_from=""):
 	if not os.path.exists(image_dir_param + "rec_field_additional.pdf"):
 		filename_list = ["rec_field_additional","rec_field_additional_I"]
 		Wlgn_to_4 = Wlgn_to_4.reshape(num_lgn_paths,N4*N4*Nvert,Nlgn*Nlgn)
+		DA = max([DA_on,DA_off])
 		for j in range(num_lgn_paths//2):
 			pp = PdfPages(image_dir_param + "{}.pdf".format(filename_list[j]))
 			tf = Wlgn_to_4[j*2:j*2+2,...]/np.sqrt(arbor2[j*2:j*2+2,...])
@@ -1161,6 +1219,7 @@ def plotting_routines(Version,load_external_from=""):
 	## ============= OPM ==========================================
 	if True:#not os.path.exists(image_dir_param + "opm.pdf"):
 		filename_list = ["opm","opm_I"]
+		DA = max([DA_on,DA_off])
 		for j in range(num_lgn_paths//2):
 			pp = PdfPages(image_dir_param + "{}.pdf".format(filename_list[j]))
 
@@ -1169,7 +1228,7 @@ def plotting_routines(Version,load_external_from=""):
 			RFsd,_,_,_ = analysis_tools.get_RF_form(sd,N4,Nlgn,DA,calc_PF=False,Nvert=Nvert,\
 													mode="diff_only")
 			opm,Rn = analysis_tools.get_response(sd,DA,Nvert=Nvert)
-			pref_ori = 0.5*np.angle(opm,deg=True)
+			pref_ori = 0.5*np.angle(opm,deg=False)
 			pref_ori = pref_ori - (np.sign(pref_ori)-1)*0.5*np.pi
 
 			sel = np.abs(opm)
@@ -1207,8 +1266,9 @@ def plotting_routines(Version,load_external_from=""):
 				for iN in range(N4-1):
 					ax.axvline(Nvert*(iN+1),ls="--",c="k",lw=1)
 			ax = fig.add_subplot(224)
-			ax.set_title("Preferred phase")
-			im=ax.imshow(pref_phase,interpolation="nearest",cmap="hsv",vmin=0,vmax=360)
+			ax.set_title("FT pref ori")
+			ft_ori = np.abs(np.fft.fftshift(np.fft.fft2(opm-np.nanmean(opm))))
+			im=ax.imshow(ft_ori,interpolation="nearest",cmap="binary")#,vmin=0,vmax=360)
 			plt.colorbar(im,ax=ax,orientation="horizontal")
 			if Nvert>1:
 				for iN in range(N4-1):
@@ -1218,66 +1278,66 @@ def plotting_routines(Version,load_external_from=""):
 			## =============================================================================
 
 			## === relationship between phase difference and connection weight =============
-			pref_phase = pref_phase.reshape(N4*N4*Nvert)
-			pairwise_phase_diff = analysis_tools.difference_in_phase(pref_phase,pref_phase)
-			W4 = connectivity.Connectivity((N4,N4),(N4,N4),random_seed=random_seed,Nvert=Nvert)
-			pairwise_distance = W4.create_matrix(params["W4to4_params"],"linear")
-			pairs_within_rAdistance = pairwise_distance < (rA_on * 1./N4)
-			nearest_neighbours = pairwise_distance <= (np.sqrt(2.) * 1./N4)
-			lower_tri = np.tri(N4**2*Nvert,N4**2*Nvert,k=-1,dtype=bool)
-			WEE = W4to4[:N4**2*Nvert,:N4**2*Nvert]
+			# pref_phase = pref_phase.reshape(N4*N4*Nvert)
+			# pairwise_phase_diff = analysis_tools.difference_in_phase(pref_phase,pref_phase)
+			# W4 = connectivity.Connectivity((N4,N4),(N4,N4),random_seed=random_seed,Nvert=Nvert)
+			# pairwise_distance = W4.create_matrix(params["W4to4_params"],"linear")
+			# pairs_within_rAdistance = pairwise_distance < (rA_on * 1./N4)
+			# nearest_neighbours = pairwise_distance <= (np.sqrt(2.) * 1./N4)
+			# lower_tri = np.tri(N4**2*Nvert,N4**2*Nvert,k=-1,dtype=bool)
+			# WEE = W4to4[:N4**2*Nvert,:N4**2*Nvert]
 
 		
-			lower_WEE = WEE[lower_tri]
-			lower_phase_diff = pairwise_phase_diff[lower_tri]
-			NN_low_WEE = WEE[np.logical_and(lower_tri,nearest_neighbours)]
-			NN_low_phase_diff = pairwise_phase_diff[np.logical_and(lower_tri,nearest_neighbours)]
-			rA_low_WEE = WEE[np.logical_and(lower_tri,pairs_within_rAdistance)]
-			rA_low_phase_diff = pairwise_phase_diff[np.logical_and(lower_tri,pairs_within_rAdistance)]
+			# lower_WEE = WEE[lower_tri]
+			# lower_phase_diff = pairwise_phase_diff[lower_tri]
+			# NN_low_WEE = WEE[np.logical_and(lower_tri,nearest_neighbours)]
+			# NN_low_phase_diff = pairwise_phase_diff[np.logical_and(lower_tri,nearest_neighbours)]
+			# rA_low_WEE = WEE[np.logical_and(lower_tri,pairs_within_rAdistance)]
+			# rA_low_phase_diff = pairwise_phase_diff[np.logical_and(lower_tri,pairs_within_rAdistance)]
 
-			cc = analysis_tools.correlate(lower_WEE,lower_phase_diff)
-			NN_cc = analysis_tools.correlate(NN_low_WEE,NN_low_phase_diff)
-			rA_cc = analysis_tools.correlate(rA_low_WEE,rA_low_phase_diff)
+			# cc = analysis_tools.correlate(lower_WEE,lower_phase_diff)
+			# NN_cc = analysis_tools.correlate(NN_low_WEE,NN_low_phase_diff)
+			# rA_cc = analysis_tools.correlate(rA_low_WEE,rA_low_phase_diff)
 
-			fig = plt.figure(figsize=(3*6,2*5))
-			ax = fig.add_subplot(231)
-			ax.set_title("Corr coeff = {:.2f}".format(cc))
-			ax.plot(lower_WEE,lower_phase_diff,"o",alpha=0.4,rasterized=True)
-			ax.set_xlabel("Rec connectivity weight")
-			ax.set_ylabel("Phase diff (deg)")
-			ax = fig.add_subplot(232)
-			ax.set_title("Corr coeff = {:.2f}".format(NN_cc))
-			ax.plot(NN_low_WEE,NN_low_phase_diff,"o",alpha=0.4,rasterized=True)
-			ax.set_xlabel("Rec connectivity weight NN")
-			ax.set_ylabel("Phase diff NN (deg)")
-			ax = fig.add_subplot(233)
-			ax.set_title("Corr coeff = {:.2f}".format(rA_cc))
-			ax.plot(rA_low_WEE,rA_low_phase_diff,"o",alpha=0.4,rasterized=True)
-			ax.set_xlabel("Rec connectivity weight within rA")
-			ax.set_ylabel("Phase diff within rA (deg)")
-			ax = fig.add_subplot(234)
-			im=ax.imshow(WEE,interpolation="nearest",cmap="binary")
-			plt.colorbar(im,ax=ax)
-			ax.set_title("Rec connectivity weight")
-			ax = fig.add_subplot(235)
-			im=ax.imshow(pairwise_phase_diff,interpolation="nearest",cmap="binary")
-			plt.colorbar(im,ax=ax)
-			ax.set_title("Pairwise Phase diff")
-			pp.savefig(fig,dpi=300,bbox_inches='tight')
-			plt.close(fig)
+			# fig = plt.figure(figsize=(3*6,2*5))
+			# ax = fig.add_subplot(231)
+			# ax.set_title("Corr coeff = {:.2f}".format(cc))
+			# ax.plot(lower_WEE,lower_phase_diff,"o",alpha=0.4,rasterized=True)
+			# ax.set_xlabel("Rec connectivity weight")
+			# ax.set_ylabel("Phase diff (deg)")
+			# ax = fig.add_subplot(232)
+			# ax.set_title("Corr coeff = {:.2f}".format(NN_cc))
+			# ax.plot(NN_low_WEE,NN_low_phase_diff,"o",alpha=0.4,rasterized=True)
+			# ax.set_xlabel("Rec connectivity weight NN")
+			# ax.set_ylabel("Phase diff NN (deg)")
+			# ax = fig.add_subplot(233)
+			# ax.set_title("Corr coeff = {:.2f}".format(rA_cc))
+			# ax.plot(rA_low_WEE,rA_low_phase_diff,"o",alpha=0.4,rasterized=True)
+			# ax.set_xlabel("Rec connectivity weight within rA")
+			# ax.set_ylabel("Phase diff within rA (deg)")
+			# ax = fig.add_subplot(234)
+			# im=ax.imshow(WEE,interpolation="nearest",cmap="binary")
+			# plt.colorbar(im,ax=ax)
+			# ax.set_title("Rec connectivity weight")
+			# ax = fig.add_subplot(235)
+			# im=ax.imshow(pairwise_phase_diff,interpolation="nearest",cmap="binary")
+			# plt.colorbar(im,ax=ax)
+			# ax.set_title("Pairwise Phase diff")
+			# pp.savefig(fig,dpi=300,bbox_inches='tight')
+			# plt.close(fig)
 			## =============================================================================
 
-			fig = plt.figure(figsize=(12,5))
-			ax = fig.add_subplot(121)
-			ax.set_title("Fitted gabors")
-			im=ax.imshow(gabors,interpolation="nearest",cmap="RdBu_r")
-			plt.colorbar(im,ax=ax)
-			ax = fig.add_subplot(122)
-			ax.set_title("RFs")
-			im=ax.imshow(RF[0,:,:],interpolation="nearest",cmap="RdBu_r")
-			plt.colorbar(im,ax=ax)
-			pp.savefig(fig,dpi=300,bbox_inches='tight')
-			plt.close(fig)
+			# fig = plt.figure(figsize=(12,5))
+			# ax = fig.add_subplot(121)
+			# ax.set_title("Fitted gabors")
+			# im=ax.imshow(gabors,interpolation="nearest",cmap="RdBu_r")
+			# plt.colorbar(im,ax=ax)
+			# ax = fig.add_subplot(122)
+			# ax.set_title("RFs")
+			# im=ax.imshow(RF[0,:,:],interpolation="nearest",cmap="RdBu_r")
+			# plt.colorbar(im,ax=ax)
+			# pp.savefig(fig,dpi=300,bbox_inches='tight')
+			# plt.close(fig)
 
 			if Nvert>1:
 				fig = plt.figure(figsize=(2*6,4*5))
@@ -1371,65 +1431,65 @@ def plotting_routines(Version,load_external_from=""):
 				pp.savefig(fig2,dpi=300,bbox_inches='tight')
 				plt.close(fig2)
 
-			elif Nvert==1:
-				pref_phase = pref_phase.reshape(N4*N4)
-				pref_ori = pref_ori.reshape(N4*N4)
+			# elif Nvert==1:
+			# 	pref_phase = pref_phase.reshape(N4*N4)
+			# 	pref_ori = pref_ori.reshape(N4*N4)
 
-				W4 = connectivity.Connectivity((N4,N4),(N4,N4),random_seed=random_seed)
-				pairwise_distance = W4.create_matrix(params["W4to4_params"],"linear")
-				pairs_within_rAdistance = pairwise_distance < (rA_on * 1./N4)
-				pairs_within_rAdistance[np.tri(N4**2,N4**2,k=0,dtype=bool)] = 0
-				pairwise_phase_diff = analysis_tools.difference_in_phase(pref_phase,pref_phase)
-				pairwise_ori_diff = analysis_tools.difference_in_pref_ori(pref_ori,pref_ori)
+			# 	W4 = connectivity.Connectivity((N4,N4),(N4,N4),random_seed=random_seed)
+			# 	pairwise_distance = W4.create_matrix(params["W4to4_params"],"linear")
+			# 	pairs_within_rAdistance = pairwise_distance < (rA_on * 1./N4)
+			# 	pairs_within_rAdistance[np.tri(N4**2,N4**2,k=0,dtype=bool)] = 0
+			# 	pairwise_phase_diff = analysis_tools.difference_in_phase(pref_phase,pref_phase)
+			# 	pairwise_ori_diff = analysis_tools.difference_in_pref_ori(pref_ori,pref_ori)
 
-				phase_diff_rA = pairwise_phase_diff[pairs_within_rAdistance]
-				ori_diff_rA = pairwise_ori_diff[pairs_within_rAdistance]
+			# 	phase_diff_rA = pairwise_phase_diff[pairs_within_rAdistance]
+			# 	ori_diff_rA = pairwise_ori_diff[pairs_within_rAdistance]
 
-				not_nearest_neighbours = pairwise_distance > (np.sqrt(2.) * 1./N4)
-				not_nearest_neighbours[np.tri(N4**2,N4**2,k=0,dtype=bool)] = 1
-				pairwise_phase_diff[not_nearest_neighbours] = np.nan
-				pairwise_ori_diff[not_nearest_neighbours] = np.nan
+			# 	not_nearest_neighbours = pairwise_distance > (np.sqrt(2.) * 1./N4)
+			# 	not_nearest_neighbours[np.tri(N4**2,N4**2,k=0,dtype=bool)] = 1
+			# 	pairwise_phase_diff[not_nearest_neighbours] = np.nan
+			# 	pairwise_ori_diff[not_nearest_neighbours] = np.nan
 
-				fig = plt.figure(figsize=(6*2,10))
-				ax = fig.add_subplot(221)
-				try:
-					ax.hist([ori_diff_rA,pairwise_ori_diff[np.isfinite(pairwise_phase_diff)]],\
-							color=["b","m"],label=["within rA", "NN"],density=True)
-				except:
-					ax.hist([ori_diff_rA,pairwise_ori_diff[np.isfinite(pairwise_phase_diff)]],\
-							color=["b","m"],label=["within rA", "NN"],normed=True)
-				ax.set_xlabel("Pairwise pref ori difference NN")
-				ax.legend(loc="best")
-				ax = fig.add_subplot(222)
-				try:
-					ax.hist([phase_diff_rA,pairwise_phase_diff[np.isfinite(pairwise_phase_diff)]],\
-							bins=7,color=["b","m"],label=["within rA", "NN"],density=True)
-				except:
-					ax.hist([phase_diff_rA,pairwise_phase_diff[np.isfinite(pairwise_phase_diff)]],\
-							bins=7,color=["b","m"],label=["within rA", "NN"],normed=True)
-				ax.set_xlabel("Pairwise phase difference NN")
-				ax.legend(loc="best")
-				plot_pairw_ori_diff = pairwise_ori_diff[np.logical_not(not_nearest_neighbours)]
-				plot_pairw_phase_diff = pairwise_phase_diff[np.logical_not(not_nearest_neighbours)]
-				ax = fig.add_subplot(223)
-				ax.plot(plot_pairw_ori_diff,plot_pairw_phase_diff,"ok",\
-						rasterized=True,alpha=0.4)
-				ax.set_xlabel("Pairwise pref ori difference NN")
-				ax.set_ylabel("Pairwise phase difference NN")
-				ax = fig.add_subplot(224)
-				try:
-					ax.hist([plot_pairw_phase_diff[plot_pairw_ori_diff<20]],bins=7,color=["orange"],
-							label=[r"$\Delta$PO<20deg"],density=True)
-				except:
-					ax.hist([plot_pairw_phase_diff[plot_pairw_ori_diff<20]],bins=7,color=["orange"],
-							label=[r"$\Delta$PO<20deg"],normed=True)
-				# ax.axvline(np.nanmedian(plot_pairw_phase_diff[plot_pairw_ori_diff>70]),c="g")
-				ax.axvline(np.nanmedian(plot_pairw_phase_diff[plot_pairw_ori_diff<20]),c="orange")
-				ax.legend(loc="best")
-				ax.set_xlabel("Pairwise phase difference NN")
-				ax.set_ylabel("Frequency")
-				pp.savefig(fig,dpi=300,bbox_inches='tight')
-				plt.close(fig)
+			# 	fig = plt.figure(figsize=(6*2,10))
+			# 	ax = fig.add_subplot(221)
+			# 	try:
+			# 		ax.hist([ori_diff_rA,pairwise_ori_diff[np.isfinite(pairwise_phase_diff)]],\
+			# 				color=["b","m"],label=["within rA", "NN"],density=True)
+			# 	except:
+			# 		ax.hist([ori_diff_rA,pairwise_ori_diff[np.isfinite(pairwise_phase_diff)]],\
+			# 				color=["b","m"],label=["within rA", "NN"],normed=True)
+			# 	ax.set_xlabel("Pairwise pref ori difference NN")
+			# 	ax.legend(loc="best")
+			# 	ax = fig.add_subplot(222)
+			# 	try:
+			# 		ax.hist([phase_diff_rA,pairwise_phase_diff[np.isfinite(pairwise_phase_diff)]],\
+			# 				bins=7,color=["b","m"],label=["within rA", "NN"],density=True)
+			# 	except:
+			# 		ax.hist([phase_diff_rA,pairwise_phase_diff[np.isfinite(pairwise_phase_diff)]],\
+			# 				bins=7,color=["b","m"],label=["within rA", "NN"],normed=True)
+			# 	ax.set_xlabel("Pairwise phase difference NN")
+			# 	ax.legend(loc="best")
+			# 	plot_pairw_ori_diff = pairwise_ori_diff[np.logical_not(not_nearest_neighbours)]
+			# 	plot_pairw_phase_diff = pairwise_phase_diff[np.logical_not(not_nearest_neighbours)]
+			# 	ax = fig.add_subplot(223)
+			# 	ax.plot(plot_pairw_ori_diff,plot_pairw_phase_diff,"ok",\
+			# 			rasterized=True,alpha=0.4)
+			# 	ax.set_xlabel("Pairwise pref ori difference NN")
+			# 	ax.set_ylabel("Pairwise phase difference NN")
+			# 	ax = fig.add_subplot(224)
+			# 	try:
+			# 		ax.hist([plot_pairw_phase_diff[plot_pairw_ori_diff<20]],bins=7,color=["orange"],
+			# 				label=[r"$\Delta$PO<20deg"],density=True)
+			# 	except:
+			# 		ax.hist([plot_pairw_phase_diff[plot_pairw_ori_diff<20]],bins=7,color=["orange"],
+			# 				label=[r"$\Delta$PO<20deg"],normed=True)
+			# 	# ax.axvline(np.nanmedian(plot_pairw_phase_diff[plot_pairw_ori_diff>70]),c="g")
+			# 	ax.axvline(np.nanmedian(plot_pairw_phase_diff[plot_pairw_ori_diff<20]),c="orange")
+			# 	ax.legend(loc="best")
+			# 	ax.set_xlabel("Pairwise phase difference NN")
+			# 	ax.set_ylabel("Frequency")
+			# 	pp.savefig(fig,dpi=300,bbox_inches='tight')
+			# 	plt.close(fig)
 
 			pp.close()
 

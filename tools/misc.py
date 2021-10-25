@@ -81,20 +81,14 @@ def write_to_hdf5(results_dict,cluster_name,version,filename):
 
 def load_from_hdf5(cluster_name,version_list,filename=data_dir + "layer4/results.hdf5"):
 	f = h5py.File(filename,'r')
-	print("f",f.keys())
-	print("f2",f["cluster"].keys())
 	results = {}
 	for version in version_list:
 		var_key_string = "cluster/{cl}/version/{v}/".format(cl=cluster_name,v=version)
-		print("var_key_string",version,f[var_key_string].keys())
 		results[version] = {}
 		for key in f[var_key_string].keys():
-			print(key)
-			print("key",key,f[var_key_string][key][()].shape)
 			results[version][key] = f[var_key_string][key][()]
 		# results[version] = copy(f[var_key_string])
 	f.close()
-	print("results",results[version].keys())
 	return results
 
 
@@ -144,29 +138,39 @@ def load_data(Version,file_dir,params):
 	return Wlgn_to_4_t,Wlgn_to_4,l4_t,l4I_t,l4,timesteps,keys
 
 
-def get_projection_operators(config_dict,arbor_on,arbor_off):
+def get_projection_operators(system_dict,arbor_dict,arbor_on,arbor_off,mode,layer):
 	"""load or if file is not found compute normalisation vectors for LGN to L4 conn"""
-	if config_dict["normalisation_mode"]=="xalpha":
+
+	load_orth_vectors = False
+	if (mode=="xalpha" and layer=="layer4"):
+		load_orth_vectors = True
+	elif (mode=="xalpha" and layer=="layer23" and\
+		 system_dict["W4to23_params"]["plasticity_rule"] is not None):
+		load_orth_vectors = True
+
+	if load_orth_vectors:
 		## Arbor parameters
-		N4 = config_dict["N4"]
-		Nlgn = config_dict["Nlgn"]
-		Nvert = config_dict["Nvert"]
-		arbor_profile_on = config_dict["Wlgn_to4_params"]["arbor_profile_on"]
-		arbor_profile_off = config_dict["Wlgn_to4_params"]["arbor_profile_off"]
+		N4 = system_dict["N4"]
+		N23 = system_dict["N23"]		
+		Nlgn = system_dict["Nlgn"]
+		Nvert = system_dict["Nvert"]
+		
+		arbor_profile_on = arbor_dict["arbor_profile_on"]
+		arbor_profile_off = arbor_dict["arbor_profile_off"]
 		if arbor_profile_on==arbor_profile_off:
 			name_profile = "_{}".format(arbor_profile_on)
 		else:
 			name_profile = "_{}-{}".format(arbor_profile_on,arbor_profile_off)
 
-		rA_on = config_dict["Wlgn_to4_params"]["r_A_on"]
-		rA_off = config_dict["Wlgn_to4_params"]["r_A_off"]
+		rA_on = arbor_dict["r_A_on"]
+		rA_off = arbor_dict["r_A_off"]
 		if rA_on==rA_off:
 			name_rA = "_rA{}".format(np.around(rA_on,2))
 		else:
 			name_rA = "_rAon{}_rAoff{}".format(np.around(rA_on,2),np.around(rA_off,2))
 
-		ampl_on = config_dict["Wlgn_to4_params"]["ampl_on"]
-		ampl_off = config_dict["Wlgn_to4_params"]["ampl_off"]
+		ampl_on = arbor_dict["ampl_on"]
+		ampl_off = arbor_dict["ampl_off"]
 		if (ampl_on!=ampl_off or ampl_on!=1):
 			name_ampl = "_amplon{}_amploff{}".format(ampl_on,ampl_off)
 		else:
@@ -177,28 +181,31 @@ def get_projection_operators(config_dict,arbor_on,arbor_off):
 		try:
 			if rA_on==rA_off:
 				rA = rA_on
-				constraint_vec = np.load(data_dir +\
-								 "layer4/P_orth/N4{}_Nlgn{}{}{}.npy".format(\
-								 N4,Nlgn,"" if Nvert==1 else "_Nvert{}".format(Nvert),
-								 name))
-				# c_coeff = np.load(data_dir +\
-				# 				 "layer4/P_orth/c_coeff_N4{}_Nlgn{}{}{}.npy".format(\
-				# 				 N4,Nlgn,"" if Nvert==1 else "_Nvert{}".format(Nvert),
-				# 				 name))
+				if layer=="layer4":
+					constraint_vec = np.load(data_dir +\
+									 "layer4/P_orth/N4{}_Nlgn{}{}{}.npy".format(\
+									 N4,Nlgn,"" if Nvert==1 else "_Nvert{}".format(Nvert),
+									 name))
+				elif layer=="layer23":
+					constraint_vec = np.load(data_dir +\
+									 "two_layer/P_orth/N23{}_N4{}{}{}.npy".format(\
+									 N23,N4,"" if Nvert==1 else "_Nvert{}".format(Nvert),\
+									 name))
 			else:
-				constraint_vec = np.load(data_dir +\
-								 "layer4/P_orth/N4{}_Nlgn{}{}{}.npy".format(\
-								 N4,Nlgn,"" if Nvert==1 else "_Nvert{}".format(Nvert),
-								 name))
-				# c_coeff = np.load(data_dir +\
-				# 				 "layer4/P_orth/c_coeff_N4{}_Nlgn{}{}{}.npy".format(\
-				# 				 N4,Nlgn,"" if Nvert==1 else "_Nvert{}".format(Nvert),
-				# 				 name))
-			# print("constraint_vec",contraint_vec.shape)
+				if layer=="layer4":
+					constraint_vec = np.load(data_dir +\
+									 "layer4/P_orth/N4{}_Nlgn{}{}{}.npy".format(\
+									 N4,Nlgn,"" if Nvert==1 else "_Nvert{}".format(Nvert),
+									 name))
+				elif layer=="layer23":
+					constraint_vec = np.load(data_dir +\
+									 "two_layer/P_orth/N23{}_N4{}{}{}.npy".format(\
+									 N23,N4,"" if Nvert==1 else "_Nvert{}".format(Nvert),\
+									 name))
+			print("constraint_vec",constraint_vec.shape)
 			lim = constraint_vec.shape[0]//2
 			c_orth = constraint_vec[:lim,:]
 			s_orth = constraint_vec[lim:2*lim,:]
-			# c_vec = constraint_vec[2*lim:,:]
 	
 		except Exception as e:
 			print(e)
@@ -206,25 +213,30 @@ def get_projection_operators(config_dict,arbor_on,arbor_off):
 			sys.stdout.flush()
 			if rA_on==rA_off:
 				rA = rA_on
-				c_orth,s_orth = nc.generate_simIO_normalisation(Nlgn,N4,arbor_on,Nvert)
-				np.save(data_dir + "layer4/P_orth/N4{}_Nlgn{}{}{}.npy".format(N4,\
-						Nlgn,"" if Nvert==1 else "_Nvert{}".format(Nvert),\
-						name),np.concatenate([c_orth,s_orth]))
-				# np.save(data_dir + "layer4/P_orth/c_coeff_N4{}_Nlgn{}{}{}.npy".format(N4,\
-				# 		Nlgn,"" if Nvert==1 else "_Nvert{}".format(Nvert),\
-				# 		name),c_coeff)
+				if layer=="layer4":
+					c_orth,s_orth = nc.generate_simIO_normalisation(Nlgn,N4,arbor_on,Nvert)
+					np.save(data_dir + "layer4/P_orth/N4{}_Nlgn{}{}{}.npy".format(N4,\
+							Nlgn,"" if Nvert==1 else "_Nvert{}".format(Nvert),\
+							name),np.concatenate([c_orth,s_orth]))
+				elif layer=="layer23":
+					c_orth,s_orth = dynamics.generate_simIO_normalisation_oneUnittype(N4,\
+										N23,arbor_on,Nvert=1)
+					np.save(data_dir + "two_layer/P_orth/N23{}_N4{}{}{}.npy".format(N23,\
+							N4,"" if Nvert==1 else "_Nvert{}".format(Nvert),
+							name),np.concatenate([c_orth,s_orth]))
 			else:
-				c_orth,s_orth = nc.generate_simIO_normalisation_onoff(Nlgn,N4,\
-																	arbor_on,arbor_off,Nvert)
-				np.save(data_dir + "layer4/P_orth/N4{}_Nlgn{}{}{}.npy".format(\
-						N4,Nlgn,"" if Nvert==1 else "_Nvert{}".format(Nvert),\
-						name),np.concatenate([c_orth,s_orth]))
-				# np.save(data_dir + "layer4/P_orth/c_coeff_N4{}_Nlgn{}{}{}.npy".format(\
-				# 		N4,Nlgn,"" if Nvert==1 else "_Nvert{}".format(Nvert),\
-				# 		name),c_coeff)
+				if layer=="layer4":
+					c_orth,s_orth = nc.generate_simIO_normalisation_onoff(Nlgn,N4,\
+																		arbor_on,arbor_off,Nvert)
+					np.save(data_dir + "layer4/P_orth/N4{}_Nlgn{}{}{}.npy".format(\
+							N4,Nlgn,"" if Nvert==1 else "_Nvert{}".format(Nvert),\
+							name),np.concatenate([c_orth,s_orth]))
+				elif layer=="layer23":
+					print("layer 23 c_orth,s_orth not implemented for different arbors")
 	
 	else:
 		c_orth,s_orth = np.array([]),np.array([])
+	
 	return c_orth,s_orth
 
 

@@ -58,14 +58,20 @@ class Network:
 
 		## init normalization
 		## syn norm over x
-		if self.config_dict["multiplicative_normalisation"]=="x":
+		if self.config_dict["Wlgn_to4_params"]["mult_norm"]=="x":
 			self.init_weights = np.sum(self.Wlgn_to_4,axis=1)
 		## syn norm over alpha
-		elif self.config_dict["multiplicative_normalisation"]=="alpha":
+		elif self.config_dict["Wlgn_to4_params"]["mult_norm"]=="alpha":
 			self.init_weights = np.sum(self.Wlgn_to_4,axis=2)
 		## syn norm over x and alpha
-		elif self.config_dict["multiplicative_normalisation"]=="xalpha":
-			self.init_weights = None ## create in script
+		elif self.config_dict["Wlgn_to4_params"]["mult_norm"]=="xalpha":
+			self.init_weights = None ## create in script, needs orth norm vectors
+		elif self.config_dict["Wlgn_to4_params"]["mult_norm"]=="homeostatic":
+			self.init_weights = np.array([]) ## not needed
+		elif self.config_dict["Wlgn_to4_params"]["mult_norm"]=="divisive":
+			self.init_weights = np.array([]) ## not needed
+		elif self.config_dict["Wlgn_to4_params"]["mult_norm"]=="None":
+			self.init_weights = np.array([]) ## not needed
 
 
 		## arbor from LGN to L4
@@ -87,7 +93,7 @@ class Network:
 		sigma_rec = self.config_dict["W4to4_params"]["sigma_factor"]
 		max_ew = self.config_dict["W4to4_params"]["max_ew"]
 
-		if "2pop" in Wrec_mode: 
+		if "2pop" in Wrec_mode:
 			W4 = connectivity.Connectivity_2pop((self.N4,self.N4),(self.N4,self.N4),\
 												(self.N4,self.N4), (self.N4,self.N4),\
 			 									random_seed=self.config_dict["random_seed"],\
@@ -122,11 +128,11 @@ class Network:
 												 Nvert=(self.Nvert,1))
 			Wrec_mode = self.config_dict["W4to23_params"]["Wrec_mode"]
 			r_A = None
-			if self.config_dict["W4to23_params"]["plastic"]:
+			if self.config_dict["W4to23_params"]["plasticity_rule"] is not None:
 				Wrec_mode = "initialize"
 				r_A = self.config_dict["W4to23_params"]["r_A"]
 			if (self.config_dict["RF_mode"]=="load_from_external" and\
-				self.config_dict["W4to23_params"]["plastic"]):
+				self.config_dict["W4to23_params"]["plasticity_rule"] is not None):
 				self.W4to23 = self.load_W4to23(**self.kwargs)
 			else:
 				self.W4to23 = W4.create_matrix_2pop(self.config_dict["W4to23_params"],\
@@ -138,8 +144,6 @@ class Network:
 			## init normalization
 			## syn norm over receiving layer 2/3
 			self.init_weights_4to23 = np.sum(self.W4to23,axis=0)
-			## scaled by normalisation to Nvert
-			# W4to23 /= float(Nvert)
 			## ======================== Feedback conn L23 to L4 ===================================
 			## ====================================================================================
 			W4 = connectivity.Connectivity_2pop((self.N23,self.N23),(self.N23,self.N23),\
@@ -148,8 +152,6 @@ class Network:
 				 								Nvert=(1,self.Nvert))
 			Wrec_mode = self.config_dict["W23to4_params"]["Wrec_mode"]
 			self.W23to4 = W4.create_matrix_2pop(self.config_dict["W23to4_params"],Wrec_mode)
-			## not scaled to Nvert, because no Nvert in from_size
-			# W23to4 /= float(Nvert)
 
 			self.system = (self.Wret_to_lgn,self.Wlgn_to_4,self.arbor_on,self.arbor_off,\
 							self.arbor2,self.init_weights,self.W4to4,self.W23to23,self.W4to23,\
@@ -172,7 +174,7 @@ class Network:
 
 			lgn_input_on,lgn_input_off = [],[]
 			num_freq = kwargs["num_freq"]#3
-			num_oris = kwargs["num_oris"]#4
+			num_oris = len(kwargs["orientations"])
 			Nsur = kwargs["Nsur"]## gives number of input patterns with diff phases
 			spat_frequencies = kwargs["spat_frequencies"]#np.array([80,90,120])
 			orientations = kwargs["orientations"]
@@ -192,13 +194,15 @@ class Network:
 			lgn_input_on = np.array(lgn_input_on)
 			lgn_input_off = np.array(lgn_input_off)
 			lgn = np.stack([lgn_input_on,np.array(lgn_input_off)])
-			lgn = lgn.reshape(2,num_freq,num_oris,Nsur,-1)
+			lgn = lgn.reshape(2,num_freq*num_oris*Nsur,-1)
+			lgn = np.swapaxes(lgn,1,2)
+			lgn = lgn.reshape(2,-1,num_freq,num_oris,Nsur)
 
 		elif self.config_dict["Inp_params"]["input_type"]=="white_noise_online":
 			lgn,lgnI = [],[]
 			if kwargs["full_lgn_output"]:
 				# generate only lgn input if not "online" generation of it anyways
-				last_timestep = kwargs["last_timestep"]
+				# last_timestep = kwargs["last_timestep"]
 				T_pd = self.config_dict["Inp_params"]["pattern_duration"]
 				avg_no_inp = self.config_dict["Inp_params"]["avg_no_inp"]
 				num_inputs = int(self.config_dict["runtime"]/self.config_dict["dt"]/\
@@ -213,37 +217,17 @@ class Network:
 							continue
 						else:
 							rng_seed = self.config_dict["random_seed"]*1000 + jinput + istep*avg_no_inp
-							lgn.append(inputs.Inputs_lgn((self.Nret,self.Nret),Version,\
-									  rng_seed).create_lgn_input(\
-									  self.config_dict["Inp_params"],\
-									  self.config_dict["Inp_params"]["input_type"],\
-									  Wret_to_lgn
-									  ))
-							if num_lgn_paths==4:
-								lgnI.append(inputs.Inputs_lgn((self.Nret,self.Nret),Version,\
-										  rng_seed+rnd_seed_I_diff).create_lgn_input(\
-										  self.config_dict["Inp_params"],\
-										  self.config_dict["Inp_params"]["input_type"],\
-										  Wret_to_lgn
-										  ))
+							inp = inputs.Inputs_lgn((self.Nret,self.Nret),Version,rng_seed)
+							ilgn = inp.create_lgn_input(self.config_dict["Inp_params"],\
+														self.config_dict["Inp_params"]["input_type"],\
+														Wret_to_lgn)
+							ilgn = inp.apply_ONOFF_bias(ilgn,self.config_dict["Inp_params"])
+							lgn.append(ilgn)
+
 				lgn = np.swapaxes(np.swapaxes(np.array(lgn),0,1),1,2)
 				if num_lgn_paths==4:
-					lgnI = np.swapaxes(np.swapaxes(np.array(lgnI),0,1),1,2)
-					lgn = np.concatenate([lgn,lgnI])
-				# lgn = []
-				# # for i in range(1,int((last_timestep+1)/config_dict["Inp_params"]["avg_no_inp"]/T_pd)):
-				# for i in range(2497,2510):
-				# 	for it in range(config_dict["Inp_params"]["avg_no_inp"]):
-				# 		if (config_dict["Inp_params"]["simulate_activity"] and ((int(np.floor((i+1)/T_pd)) - it)%2)==0):
-				# 			# print(i,it)
-				# 			continue
-				# 		rng_seed = config_dict["random_seed"]*1000 +\
-				# 				   i*config_dict["Inp_params"]["avg_no_inp"] - 1 - it
-				# 		print("i",i,rng_seed)
-				# 		lgn.append( inputs.Inputs_lgn((Nret,Nret),Version,rng_seed).create_lgn_input(\
-				# 			config_dict["Inp_params"], "white_noise_online", Wret_to_lgn) )
-				# lgn = np.swapaxes(np.swapaxes(np.array(lgn),0,1),1,2)
-		
+					lgn = np.concatenate([lgn,lgn])
+
 		elif self.config_dict["Inp_params"]["input_type"]=="unstructured":
 			pass
 
@@ -264,22 +248,24 @@ class Network:
 
 
 		elif mode=="gabor":
+			conn = connectivity.Connectivity((self.Nlgn,self.Nlgn),(self.N4,self.N4),\
+											random_seed=12345)
+
 			## smooth OPM generation
 			grid = np.linspace(0,1,self.N4,endpoint=False)
 			xto,yto = np.meshgrid(grid,grid)
 			conn_params = {"rng" : np.random.RandomState(20200205)}
-			ecp,sigma = connectivity.gen_ecp(xto, yto, conn_params)
+			ecp,sigma = conn.gen_ecp(xto, yto, conn_params)
 			opm = np.angle(ecp,deg=False)*0.5
 			
 			## smooth phases generation
 			grid = np.linspace(0,1,self.N4,endpoint=False)
 			xto,yto = np.meshgrid(grid,grid)
 			conn_params = {"rng" : np.random.RandomState(20200205), "kc" : 2., "n" : 1}
-			ecp,sigma = connectivity.gen_ecp(xto, yto, conn_params)
+			ecp,sigma = conn.gen_ecp(xto, yto, conn_params)
 			pref_phase = np.angle(ecp,deg=False)
 			
-			conn = connectivity.Connectivity((self.Nlgn,self.Nlgn),(self.N4,self.N4),\
-											random_seed=12345)
+			
 
 			if "ampl_het" in kwargs.keys():
 				ampl_het = kwargs["ampl_het"]
@@ -342,10 +328,14 @@ class Network:
 
 			elif kwargs["system_mode"]=="one_layer":
 				try:
-					yfile = np.load(data_dir + "layer4/habanero/y_files/y_v{v}.npz".format(\
-									v=Version))
-					Wlgn_to_4 = yfile["W"].reshape(num_lgn_paths,self.N4**2*self.Nvert,self.Nlgn**2)
-				except:
+					if os.environ["USER"]=="bh2757":
+						yfile = np.load(data_dir + "layer4/v{v}/y_v{v}.npz".format(v=Version))
+						Wlgn_to_4 = yfile["W"].reshape(num_lgn_paths,self.N4**2*self.Nvert,self.Nlgn**2)
+					else:
+						yfile = np.load(data_dir + "layer4/habanero/y_files/y_v{v}.npz".format(\
+										v=Version))
+						Wlgn_to_4 = yfile["W"].reshape(num_lgn_paths,self.N4**2*self.Nvert,self.Nlgn**2)
+				except Exception as e:
 					yfile = np.load(\
 						"/media/bettina/TOSHIBA EXT/physics/columbia/projects/ori_dev_model/"+\
 						"data/layer4/habanero/v{v}/y_v{v}.npz".format(v=Version))

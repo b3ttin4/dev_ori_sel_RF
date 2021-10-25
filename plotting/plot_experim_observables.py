@@ -28,7 +28,7 @@ from bettina.modeling.ori_dev_model import data_dir,image_dir,inputs,\
 connectivity,network
 from bettina.modeling.ori_dev_model.tools import plot_functions,analysis_tools,misc,\
 update_params_dict,get_experim_observables
-
+from bettina.modeling.ori_dev_model.data import data_lee
 
 
 
@@ -43,7 +43,8 @@ def plotting_routines(Version,load_external_from=""):
 	else:
 		file_dir = data_dir + "layer4/v{v}/".format(v=Version)
 	params = pickle.load(open(file_dir + "config_v{v}.p".format(v=Version),"rb"))
-	params = update_params_dict.update_params(params)
+	update_params_dict.update_params(params)
+	print("params",params.keys())
 
 	## ======================== NETWORK PARAMETERS ========================
 	sc = params["Wret_to_lgn_params"]["sigma"]
@@ -155,7 +156,8 @@ def plotting_routines(Version,load_external_from=""):
 	nbins = 10
 	bins_dict = {
 					"Envelope width" : np.linspace(1,6,nbins,endpoint=True),
-					"Orientation" : np.linspace(0,np.pi,nbins,endpoint=True),
+					"Orientation_fit" : np.linspace(0,np.pi,nbins,endpoint=True),
+					"Orientation_FT" : np.linspace(0,np.pi,nbins,endpoint=True),
 					"Relative phase" : np.linspace(0,2*np.pi,nbins,endpoint=True),
 					"# half cycles" : np.linspace(1,5,nbins,endpoint=True),
 					"Log aspect ratio" : np.linspace(-0.6,0.6,nbins,endpoint=True),
@@ -172,6 +174,7 @@ def plotting_routines(Version,load_external_from=""):
 	for j in range(num_lgn_paths//2):
 		pp = PdfPages(image_dir_param + "{}.pdf".format(filename_list[j]))
 		sf = Wlgn_to_4[j*2:j*2+2,...]
+		print("sf",np.nanmin(sf),np.nanmax(sf),np.sum(np.isfinite(sf)),sf.size)
 		sf = sf.reshape(2,N4,N4*Nvert,Nlgn,Nlgn)
 		RF,PF,_,_ = analysis_tools.get_RF_form(sf,N4,Nlgn,DA,calc_PF=True,Nvert=Nvert)
 		observables =\
@@ -185,7 +188,36 @@ def plotting_routines(Version,load_external_from=""):
 			fig = plt.figure(figsize=(6*ncol,5*nrow))
 			fig.suptitle(key)
 
-			if key in ("Distance ON to center","Distance OFF to center",\
+			if key in ("Orientation_FT",):
+				ncol,nrow = 2,3
+				fig = plt.figure(figsize=(6*ncol,5*nrow))
+				fig.suptitle(key + "cardina/oblique")
+
+				value2d = value.reshape(N4,N4*Nvert)
+				tuning = np.angle(value2d)
+				car = np.real(np.exp(1j*2*tuning))
+				obl = np.imag(np.exp(1j*2*tuning))
+
+				for l,lmap in enumerate([car,obl]):
+					ax = fig.add_subplot(nrow,ncol,1+l*2)
+					im=ax.imshow(lmap,interpolation="nearest",cmap="binary")
+					plt.colorbar(im,ax=ax)
+
+					ax = fig.add_subplot(nrow,ncol,2+l*2)
+					ft_map = np.abs(np.fft.fftshift(np.fft.fft2(lmap-np.nanmean(lmap))))
+					im=ax.imshow(ft_map,interpolation="nearest",cmap="binary")
+					plt.colorbar(im,ax=ax)
+
+				ax = fig.add_subplot(nrow,ncol,5)
+				im=ax.imshow(misc.plot_complex_map(value2d),interpolation="nearest",cmap="hsv")
+				plt.colorbar(im,ax=ax,orientation="horizontal")
+
+				ax = fig.add_subplot(nrow,ncol,6)
+				ft_map = np.abs(np.fft.fftshift(np.fft.fft2(tuning-np.nanmean(tuning))))
+				im=ax.imshow(ft_map,interpolation="nearest",cmap="binary")
+				plt.colorbar(im,ax=ax)
+
+			elif key in ("Distance ON to center","Distance OFF to center",\
 					   "ON-OFF Distance to center","Center value RF"):
 				
 				ax = fig.add_subplot(nrow,ncol,1)
@@ -198,17 +230,36 @@ def plotting_routines(Version,load_external_from=""):
 				ax.set_xlabel(key)
 				ax.set_ylabel("Cumulative distrib.")
 			
-			elif key in ("ONOFF ratio","ONOFF segregation","Envelope width","Orientation",\
+			elif key in ("ONOFF ratio","ON/OFF segregation","Envelope width","Orientation_fit",\
 						 "Relative phase","# half cycles","Log aspect ratio"):
+				ncol,nrow = 2,1
+				value2d = value.reshape(N4,N4*Nvert)
+				cmap = "binary"
+				if key=="Orientation_fit":
+					cmap = "hsv"
+					value2d = (np.angle(value2d)) % (2 * np.pi)
+				fig = plt.figure(figsize=(6*ncol,5*nrow))
+				fig.suptitle(key)
 				ax = fig.add_subplot(nrow,ncol,1)
-				im=ax.imshow(value.reshape(N4,N4*Nvert),interpolation="nearest",cmap="binary",\
+				im=ax.imshow(value2d,interpolation="nearest",cmap=cmap,\
 							 vmin=bins_dict[key][0],vmax=bins_dict[key][-1])
 				plt.colorbar(im,ax=ax)
 
 				ax = fig.add_subplot(nrow,ncol,2)
-				ax.hist(value[np.isfinite(value)],bins=bins_dict[key])
+				_,bins,_=ax.hist(value[np.isfinite(value)],bins=bins_dict[key],density=True)
 				ax.set_xlabel(key)
 				ax.set_ylabel("Number of units")
+
+				if key in data_lee.exp_data.keys():
+					x = data_lee.exp_data[key][:,0]
+					bin_diff = x[1] - x[0]
+					y = data_lee.exp_data[key][:,1]
+					ax.plot(x,y/np.sum(y)/bin_diff,'--',c="k")
+				# ax = fig.add_subplot(nrow,ncol,3)
+				# ft_val = np.abs(np.fft.fftshift(np.fft.fft2(value2d-np.nanmean(value2d))))
+				# im=ax.imshow(ft_val,interpolation="nearest",cmap="binary",\
+				# 			 vmin=bins_dict[key][0],vmax=bins_dict[key][-1])
+				# plt.colorbar(im,ax=ax)
 
 			elif key=="Fitted Gabor":
 				## imshow + comparison to original RF
@@ -246,8 +297,9 @@ def plotting_routines(Version,load_external_from=""):
 		print("cluster_name",cluster_name)
 		observables.update({"RF" : RF})
 		print("observables",observables.keys())
-		filename = data_dir+"layer4/observables/observables_v{}.hdf5".format(Version)
-		misc.write_to_hdf5(observables,cluster_name,Version,filename)
+		if j==0:
+			filename = data_dir+"layer4/observables/observables_v{}.hdf5".format(Version)
+			misc.write_to_hdf5(observables,cluster_name,Version,filename)
 
 
 

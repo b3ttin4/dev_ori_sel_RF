@@ -59,61 +59,25 @@ def parameter_sweep_twolayer(Version,config_dict,**kwargs):
 					"Version" : Version,
 					})
 	n = network.Network(Version,config_dict)
-	Wret_to_lgn,Wlgn_to_4,arbor,arbor2,init_weights,W4to4,W23to23,W4to23,arbor4to23,\
-		init_weights_4to23,W23to4 = n.system
+	Wret_to_lgn,Wlgn_to_4,arbor_on,arbor_off,arbor2,init_weights,W4to4,\
+							W23to23,W4to23,arbor4to23,init_weights_4to23,W23to4 = n.system
 	Wrec_mode = config_dict["W4to4_params"]["Wrec_mode"]
 	max_ew = config_dict["W4to4_params"]["max_ew"]
 	arbor_hstack = np.hstack([arbor4to23,0*arbor4to23])
 	arbor4to23_full = np.concatenate([arbor_hstack,arbor_hstack])
 
-
-	### Normalisation projector for ff connectivity
-	if config_dict["normalisation_mode"]=="xalpha":
-		arbor_profile = "heaviside"#config_dict["Wlgn_to4_params"]["arbor_profile"]
-		try:
-			constraint_vec = np.load(data_dir + "layer4/P_orth/N4{}_Nlgn{}{}_rA{}_{}.npy".format(\
-									 N4,Nlgn,"" if Nvert==1 else "_Nvert{}".format(Nvert),\
-									 np.around(config_dict["Wlgn_to4_params"]["r_A"],2),\
-									 arbor_profile))
-			c_orth = constraint_vec[:constraint_vec.shape[0]//2,:]
-			s_orth = constraint_vec[constraint_vec.shape[0]//2:,:]
-		except Exception as e:
-			print(e)
-			print("No file found for projection operator\n generating operator now...")
-			sys.stdout.flush()
-			c_orth,s_orth = dynamics.generate_simIO_normalisation(Nlgn,N4,arbor,Nvert=Nvert)
-			np.save(data_dir + "layer4/P_orth/N4{}_Nlgn{}{}_rA{}_{}.npy".format(N4,\
-					Nlgn,"" if Nvert==1 else "_Nvert{}".format(Nvert),
-					np.around(config_dict["Wlgn_to4_params"]["r_A"],2),arbor_profile),\
-					np.concatenate([c_orth,s_orth]))
-	else:
-		c_orth,s_orth = np.array([]),np.array([])
-
-
+	c_orth,s_orth = misc.get_projection_operators(config_dict,config_dict["Wlgn_to4_params"],\
+											  arbor_on,arbor_off,\
+											  config_dict["Wlgn_to4_params"]["constraint_mode"],\
+											  "layer4")
 	### Normalisation projector for connectivity from L4 to L23
-	if config_dict["W4to23_params"]["plastic"]:
-		arbor_profile = "heaviside"#config_dict["W4to23_params"]["arbor_profile"]
-		r_A = config_dict["W4to23_params"]["r_A"]
-		try:
-			constraint_vec = np.load(data_dir + "two_layer/P_orth/N23{}_N4{}{}_rA{}_{}.npy".format(\
-									 N23,N4,"" if Nvert==1 else "_Nvert{}".format(Nvert),\
-									 np.around(r_A,2),arbor_profile))
-			c_orth_4to23 = constraint_vec[:constraint_vec.shape[0]//2,:]
-			s_orth_4to23 = constraint_vec[constraint_vec.shape[0]//2:,:]
-		except Exception as e:
-			print(e)
-			print("No file found for projection operator\n generating operator now...")
-			sys.stdout.flush()
-			c_orth_4to23,s_orth_4to23 = dynamics.generate_simIO_normalisation_oneUnittype(N4,\
-										N23,arbor4to23,Nvert=1)
-			np.save(data_dir + "two_layer/P_orth/N23{}_N4{}{}_rA{}_{}.npy".format(N23,\
-					N4,"" if Nvert==1 else "_Nvert{}".format(Nvert),
-					np.around(r_A,2),arbor_profile),np.concatenate([c_orth_4to23,s_orth_4to23]))
-	else:
-		c_orth_4to23,s_orth_4to23 = np.array([]),np.array([])
-	
-	# exit()
-	##================================= initialization ====================================
+	c_orth_4to23,s_orth_4to23 = misc.get_projection_operators(config_dict,\
+												config_dict["W4to23_params"],\
+												arbor4to23,0,\
+												config_dict["W4to23_params"]["constraint_mode"],\
+												"layer23")
+
+		##================================= initialization ====================================
 	# tf.random.set_seed(20200128)
 	tf.random.set_seed(config_dict["random_seed"]*113)
 	l40 = tf.random.uniform([N4*N4*2*Nvert], minval=0, maxval=1, dtype=tf.float32)*0.1
@@ -142,28 +106,31 @@ def parameter_sweep_twolayer(Version,config_dict,**kwargs):
 				"W23to4" : tf.convert_to_tensor(W23to4, dtype=tf.float32),
 				"init_weights_4to23" : tf.convert_to_tensor(init_weights_4to23,dtype=tf.float32),
 				
-				"arbor" : tf.convert_to_tensor(arbor,name="arbor",dtype=tf.float32),
+				"arbor_on" : tf.convert_to_tensor(arbor_on,dtype=tf.float32),
+				"arbor_off" : tf.convert_to_tensor(arbor_off,dtype=tf.float32),
 				"arbor2" : tf.convert_to_tensor(arbor2,dtype=tf.float32),
 				"arbor4to23" : tf.convert_to_tensor(arbor4to23,dtype=tf.float32),
 				"arbor4to23_full" : tf.convert_to_tensor(arbor4to23_full,dtype=tf.float32),
+				"arbor4to4" : None,
+				"arbor23to23" : None,
+
+				# "gamma_4" : tf.constant(config_dict["gamma_4"], dtype=tf.float32),
+				# "gamma_lgn" : tf.constant(config_dict["gamma_lgn"], dtype=tf.float32),
+				# "beta_P" : tf.constant(config_dict["beta_P"], dtype=tf.float32),
+				# "beta_O" : tf.constant(config_dict["beta_O"], dtype=tf.float32),
+				# "tau" : tf.convert_to_tensor(tau, name='tau', dtype=tf.float32),
+				# "Wlim" : tf.constant(config_dict["Wlgn_to4_params"]["Wlim"], dtype=tf.float32),
+				# "pattern_duration" : tf.constant(T_pd,dtype=tf.float64),
+				# "expanse_time" : tf.constant(T_exp,dtype=tf.float64),
+				# "avg_no_inp" : config_dict["Inp_params"]["avg_no_inp"],
 				
-				"gamma_4" : tf.constant(config_dict["gamma_4"], dtype=tf.float32),
-				"gamma_lgn" : tf.constant(config_dict["gamma_lgn"], dtype=tf.float32),
-				"beta_P" : tf.constant(config_dict["beta_P"], dtype=tf.float32),
-				"beta_O" : tf.constant(config_dict["beta_O"], dtype=tf.float32),
-				"tau" : tf.convert_to_tensor(tau, name='tau', dtype=tf.float32),
-				"Wlim" : tf.constant(config_dict["Wlgn_to4_params"]["Wlim"], dtype=tf.float32),
-				"pattern_duration" : tf.constant(T_pd,dtype=tf.float64),
-				"expanse_time" : tf.constant(T_exp,dtype=tf.float64),
-				"avg_no_inp" : config_dict["Inp_params"]["avg_no_inp"],
-				
-				"normalisation_mode" : tf.constant(config_dict["normalisation_mode"]),
+				# "normalisation_mode" : tf.constant(config_dict["normalisation_mode"]),
 				"c_orth" : tf.convert_to_tensor(c_orth,dtype=tf.float32),
 				"s_orth" : tf.convert_to_tensor(s_orth,dtype=tf.float32),
 				"c_orth_4to23" : tf.convert_to_tensor(c_orth_4to23,dtype=tf.float32),
 				"s_orth_4to23" : tf.convert_to_tensor(s_orth_4to23,dtype=tf.float32),
 
-				"integrator" : config_dict["integrator"],
+				# "integrator" : config_dict["integrator"],
 				"config_dict" : config_dict,
 				}
 
@@ -171,7 +138,7 @@ def parameter_sweep_twolayer(Version,config_dict,**kwargs):
 	print("Starting simulation. This might take a while...")
 	print("...")
 	sys.stdout.flush()
-	if config_dict["W4to23_params"]["plastic"]:
+	if config_dict["W4to23_params"]["plasticity_rule"] is not None:
 		y0 = tf.concat([Wlgn_to_4.flatten(), l40, l230, W4to23.flatten()], axis=0)
 	else:
 		y0 = tf.concat([Wlgn_to_4.flatten(), l40, l230], axis=0)
@@ -196,7 +163,7 @@ def parameter_sweep_twolayer(Version,config_dict,**kwargs):
 					"l4t"		:	l4t,\
 					"l23t"		:	l23t,
 					}
-	if config_dict["W4to23_params"]["plastic"]:
+	if config_dict["W4to23_params"]["plasticity_rule"] is not None:
 		L23_size = N23**2*2
 		L4_size = N4**2*2*Nvert
 		print("w4to23.shape",yt[:,config_dict["num_lgn_paths"]*s+L4_size+L23_size:].shape)
@@ -207,7 +174,7 @@ def parameter_sweep_twolayer(Version,config_dict,**kwargs):
 	## save ff connections and activity of last timestep separately
 	filename = "two_layer/v{v}/y_v{v}.npz".format(v=Version)
 	data_dict = {"W" : y[:config_dict["num_lgn_paths"]*s], "l4" : l4, "l23" : l23}
-	if config_dict["W4to23_params"]["plastic"]:
+	if config_dict["W4to23_params"]["plasticity_rule"] is not None:
 		data_dict.update({"W4to23" : y[config_dict["num_lgn_paths"]*s+L4_size+L23_size:]})
 	misc.save_data(Version, filename, data_dict)
 
@@ -246,22 +213,22 @@ if __name__=="__main__":
 	print(" ")
 
 
-	default_dict["W4to4_params"]["sigma_EE"] = 0.1
-	default_dict["W4to4_params"]["sigma_IE"] = 0.1
-	default_dict["W4to4_params"]["sigma_EI"] = 0.07
-	default_dict["W4to4_params"]["sigma_II"] = 0.07
-	default_dict["W4to4_params"]["aEE"] = 11.4
-	default_dict["W4to4_params"]["aIE"] = 11.
-	default_dict["W4to4_params"]["aEI"] = 10.9
-	default_dict["W4to4_params"]["aII"] = 10.2
+	# default_dict["W4to4_params"]["sigma_EE"] = 0.1
+	# default_dict["W4to4_params"]["sigma_IE"] = 0.1
+	# default_dict["W4to4_params"]["sigma_EI"] = 0.07
+	# default_dict["W4to4_params"]["sigma_II"] = 0.07
+	# default_dict["W4to4_params"]["aEE"] = 11.4
+	# default_dict["W4to4_params"]["aIE"] = 11.
+	# default_dict["W4to4_params"]["aEI"] = 10.9
+	# default_dict["W4to4_params"]["aII"] = 10.2
 
-	default_dict["W4to4_params"]["max_ew"] = 0.3
-	default_dict["W23_params"]["max_ew"] = 0.9#0.013#
+	default_dict["W4to4_params"]["max_ew"] = 0.95
+	default_dict["W23_params"]["max_ew"] = 0.95#0.013#
 	default_dict["W4to23_params"]["max_ew"] = "orig"#10
 	default_dict["W23to4_params"]["max_ew"] = "orig"#2
 	default_dict["tau"] = 0.25
-	config_dict["W4to23_params"]["sigma_EE"] *= 15
-	config_dict["W4to23_params"]["sigma_IE"] *= 15
+	# config_dict["W4to23_params"]["sigma_EE"] *= 15
+	# config_dict["W4to23_params"]["sigma_IE"] *= 15
 	print("W4to23 width",config_dict["W4to23_params"]["sigma_EE"])
 	
 	print("4",default_dict["W4to4_params"])

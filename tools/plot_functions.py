@@ -39,7 +39,10 @@ def plot_RF(RF,PF,add_PF_row=True,**kwargs):
 	Nvert = kwargs["Nvert"]
 	DA = kwargs["DA"]
 	
-	norm = colors.TwoSlopeNorm(vcenter=0)
+	try:
+		norm = colors.TwoSlopeNorm(vcenter=0)
+	except:
+		norm = None
 	
 	fig = plt.figure(figsize=(6*ncol,5*nrow))
 	## receptive field
@@ -318,7 +321,7 @@ def plot_connectivity(W4to4,**kwargs):
 		Wii = W4to4[N4**2*Nvert:,N4**2*Nvert:]
 		W_cl,leaves,linkage = analysis_tools.hierarchical_clustering_of_correlation(Wei)
 		Wee_cl = (Wee[leaves].T)[leaves]
-		Wei_cl = (Wei[leaves].T)[leaves]
+		Wie_cl = (Wie[leaves].T)[leaves]
 		Wii_cl = (Wii[leaves].T)[leaves]
 		fig = plt.figure(figsize=(18,5))
 		ax = fig.add_subplot(141)
@@ -326,12 +329,12 @@ def plot_connectivity(W4to4,**kwargs):
 		im=ax.imshow(Wee_cl,interpolation="nearest",cmap="binary")
 		plt.colorbar(im,ax=ax)
 		ax = fig.add_subplot(142)
-		ax.set_title("clustered IE conn")
-		im=ax.imshow(W_cl,interpolation="nearest",cmap="binary")
+		ax.set_title("clustered EI conn")
+		im=ax.imshow(-W_cl,interpolation="nearest",cmap="binary")
 		plt.colorbar(im,ax=ax)
 		ax = fig.add_subplot(143)
-		ax.set_title("clustered EI conn")
-		im=ax.imshow(-Wei_cl,interpolation="nearest",cmap="binary")
+		ax.set_title("clustered IE conn")
+		im=ax.imshow(Wie_cl,interpolation="nearest",cmap="binary")
 		plt.colorbar(im,ax=ax)
 		ax = fig.add_subplot(144)
 		ax.set_title("clustered II conn")
@@ -414,7 +417,7 @@ def plot_LGN_input_corr(lgn,**kwargs):
 
 
 	##lgn correlations
-	lgn = lgn[:,:,:100].reshape(num_lgn_paths,N*N,-1)
+	lgn = lgn[:,:,:50].reshape(num_lgn_paths,N*N,-1)
 	lgn_norm = (lgn - np.nanmean(lgn,axis=2)[:,:,None])/np.nanstd(lgn,axis=2)[:,:,None]
 	cc = np.nanmean(lgn_norm[:,None,:,None,:] * lgn_norm[None,:,None,:,:],axis=4)
 	# cc = np.nanmean(lgn[:,None,:,None,:] * lgn[None,:,None,:,:],axis=4)
@@ -465,7 +468,7 @@ def plot_LGN_input_corr(lgn,**kwargs):
 			for j in range(2):
 				ax = fig.add_subplot(1,4,j+1+i*2)
 				ax.set_title(labels[j+i*2])
-				if not (i==0 and j==1):
+				if not (i==1 and j==0):
 					im=ax.imshow(cc[i+2,j+2,N//2,N//2].reshape(N,N),interpolation="nearest",\
 								 cmap="RdBu_r",vmin=-0.75,vmax=0.75)
 				else:
@@ -481,7 +484,7 @@ def plot_LGN_input_corr(lgn,**kwargs):
 			for j in range(2):
 				ax = fig.add_subplot(1,4,j+1+i*2)
 				ax.set_title(labels[j+i*2])
-				if not (i==0 and j==1):
+				if not (i==1 and j==0):
 					im=ax.imshow(cc_avg[i+2,j+2].reshape(N,N),interpolation="nearest",\
 								 cmap="RdBu_r",vmin=-0.75,vmax=0.75)
 				else:
@@ -489,6 +492,31 @@ def plot_LGN_input_corr(lgn,**kwargs):
 					im=ax.imshow(diff,interpolation="nearest",cmap="RdBu_r",vmin=-0.75,vmax=0.75)
 				plt.colorbar(im,ax=ax)
 		fig_list.append(fig)
+
+
+	## average (over units) covariance pattern
+	cov_avg = 0
+	lgn_norm = (lgn - np.nanmean(lgn,axis=2)[:,:,None])
+	cov = np.nanmean(lgn_norm[:,None,:,None,:] * lgn_norm[None,:,None,:,:],axis=4)
+	cov = cov.reshape(num_lgn_paths,num_lgn_paths,N,N,N,N)
+	cov[np.logical_not(np.isfinite(cov))] = 0.
+	for i in range(N):
+		for j in range(N):
+			cov_avg += np.roll(np.roll(cov[:,:,i,j,:,:],N//2-i,axis=2),N//2-j,axis=3)
+	cov_avg /= N*N
+	fig = plt.figure(figsize=(4*6,5))
+	fig.suptitle("Avg LGN input covariance (to E)")
+	for i in range(2):
+		for j in range(2):
+			ax = fig.add_subplot(1,4,j+1+i*2)
+			ax.set_title(labels[j+i*2])
+			if not (i==1 and j==0):
+				im=ax.imshow(cov_avg[i,j].reshape(N,N),interpolation="nearest",cmap="RdBu_r")
+			else:
+				diff = (0.5*cov_avg[0,0]+0.5*cov_avg[1,1]-cov_avg[0,1]).reshape(N,N)
+				im=ax.imshow(diff,interpolation="nearest",cmap="RdBu_r")
+			plt.colorbar(im,ax=ax)
+	fig_list.append(fig)
 
 	return fig_list
 
@@ -554,6 +582,8 @@ def grid_plot_twolayer(data,fig=None,ncol=None,nrow=None,vmin=None,vmax=None):
 		for jrow in range(nrow):
 			ax = fig.add_subplot(nrow,ncol,jrow+icol*nrow+1)
 			if isinstance(data,list):
+				if jrow>=len(data):
+					continue
 				this_data = data[jrow][icol]
 			else:
 				if (jrow+icol*nrow)>=data.shape[0]:
@@ -569,9 +599,9 @@ def grid_plot_twolayer(data,fig=None,ncol=None,nrow=None,vmin=None,vmax=None):
 				cax = divider.append_axes("right", size="5%", pad=0.05)
 				plt.colorbar(im, cax = cax)
 
-
 			else:
 				im = ax.plot(this_data,"-")
+				
 			axes.append(ax)
 			ims.append(im)
 

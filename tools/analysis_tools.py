@@ -66,6 +66,7 @@ def compute_orientation_tuning_from_activity(activity,orientations,norm=False):
 	opm = np.sum(activity * np.exp(1j*orientations)[:,None], axis=0)
 	if norm:
 		opm /= np.sum(activity,axis=0)
+	activity = activity.reshape(original_shape)
 	return opm.reshape(original_shape[1:])
 
 
@@ -529,7 +530,9 @@ def fit_gabor_to_RF(RFsd,**kwargs):
 			RFsd_intp = RFsd_intp.flatten()
 			# RFsd_intp = RFsd[i*DA:(i+1)*DA,j*DA:(j+1)*DA].flatten()
 			RFsd_intp /= np.nanmax(np.abs(RFsd_intp))
-
+			if np.sum(np.logical_not(np.isfinite(RFsd_intp)))>0:
+				continue
+				
 			if "Rn" in kwargs.keys():
 				pref_ori = angle_disc[np.argmax(kwargs["Rn"][:,i,j])]
 				# print("pref_ori",pref_ori,x0[3])
@@ -650,7 +653,7 @@ if __name__=="__main__":
 				 theta=(90-pref_ori)/180*np.pi,
 				 Lambda=2,
 				 psi=0/180*np.pi, 
-				 gamma=1., 
+				 gamma=4., 
 				 size=(25,25))
 	print("gabor",gabor.shape)
 	fig = plt.figure()

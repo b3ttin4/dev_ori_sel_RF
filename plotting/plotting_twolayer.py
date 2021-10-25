@@ -13,6 +13,7 @@ from bettina.modeling.ori_dev_model import data_dir,image_dir,inputs,network,\
 connectivity
 from bettina.modeling.ori_dev_model.tools import plot_functions,analysis_tools,misc,\
 update_params_dict
+from bettina.modeling.ori_dev_model.data import data_lee
 
 
 
@@ -42,7 +43,7 @@ def plotting_routines(Version,load_location="local"):
 	else:
 		load_path = data_dir + "two_layer/v{v}/".format(v=Version)
 	params = pickle.load(open(load_path + "config_v{v}.p".format(v=Version),"rb"))
-	params = update_params_dict.update_params(params)
+	update_params_dict.update_params(params)
 
 
 	sc = params["Wret_to_lgn_params"]["sigma"]
@@ -52,14 +53,13 @@ def plotting_routines(Version,load_location="local"):
 	Nret = params["Nret"]
 	Nlgn = params["Nlgn"]
 	Nvert = params["Nvert"]
-	rA = int(params["Wlgn_to4_params"]["r_A"] * N4)
+	rA_on = int(params["Wlgn_to4_params"]["r_A_on"] * N4)
+	rA_off = int(params["Wlgn_to4_params"]["r_A_off"] * N4)
+	rA = np.max([rA_off,rA_on])
 	DA = np.min([2*rA + 5,N4])
-	inp_params = params["Inp_params"]
 	T_pd = params["Inp_params"]["pattern_duration"]
 	random_seed = params["random_seed"]
 	dt = params["dt"]
-	simulate_activity = params["Inp_params"]["simulate_activity"]
-	params["Inp_params"].update({"onoff_corr_factor" : 1.})
 	num_lgn_paths = params["num_lgn_paths"]
 	avg_no_inp = params["Inp_params"]["avg_no_inp"]
 	gamma_lgn = params["gamma_lgn"]
@@ -104,9 +104,26 @@ def plotting_routines(Version,load_location="local"):
 		W4to23 = y["W4to23"].reshape(2*N23**2,2*N4**2*Nvert)
 	
 
-		## receptive and projection fields
+	## check regime of system
+	I = np.diagflat(np.ones(N23**2*2))
+	Ir = np.linalg.inv(I - W4to4)
+	Wtmp = np.dot(W4to23,Ir)
+	I23 = np.dot(np.linalg.inv(I - W23to23 - np.dot(Wtmp,W23to4)),Wtmp)
+
+	ew,_ = np.linalg.eig(W23to23 + np.dot(Wtmp,W23to4))
+	print("orig max ew I23",np.nanmax(np.real(ew)))
+
+	I = np.diagflat(np.ones(N4**2*2*Nvert))
+	Ix = np.linalg.inv(I - W23to23)
+	I4 = np.linalg.inv(I - W4to4 - np.dot(np.dot(W23to4,Ix),W4to23))
+
+	ew,_ = np.linalg.eig(W4to4 + np.dot(np.dot(W23to4,Ix),W4to23))
+	print("orig max ew I4",np.nanmax(np.real(ew)))
+
+
+	## receptive and projection fields
 	## visualization of SD = S_on - S_off
-	if True:#not os.path.exists(image_dir_param + "rec_field_final.pdf"):
+	if not os.path.exists(image_dir_param + "rec_field_final.pdf"):
 		filename_list = ["rec_field_final","rec_field_final_I"]
 		for j in range(num_lgn_paths//2):
 			pp = PdfPages(image_dir_param + "{}.pdf".format(filename_list[j]))
@@ -384,7 +401,9 @@ def plotting_routines(Version,load_location="local"):
 		RFsd,_,_,_ = analysis_tools.get_RF_form(sd,N4,Nlgn,DA,calc_PF=False,Nvert=Nvert,\
 												mode="diff_only")
 		print("RFsd",RFsd.shape)
-		opm,Rn,pref_phase,_ = analysis_tools.get_response(sd,DA,Nvert=Nvert)
+		opm,Rn = analysis_tools.get_response(sd,DA,Nvert=Nvert)
+
+		pref_phase = np.ones_like(opm,dtype=float)
 		# gabors = np.swapaxes(gabors,1,2)
 		# gabors = gabors.reshape(DA*N4*2,DA*2*N4*Nvert)
 		pref_ori = 0.5*np.angle(opm,deg=True)
@@ -414,14 +433,16 @@ def plotting_routines(Version,load_location="local"):
 			for iN in range(N4-1):
 				ax.axvline(Nvert*(iN+1),ls="--",c="k",lw=1)
 		ax = fig.add_subplot(224)
-		ax.set_title("Preferred phase")
-		im=ax.imshow(pref_phase,interpolation="nearest",cmap="hsv",vmin=0,vmax=360)
+		ax.set_title("Spectrum")
+		spectrum = np.fft.fftshift(np.fft.fft2(opm-np.nanmean(opm)))
+		im=ax.imshow(np.abs(spectrum),interpolation="nearest",cmap="binary")
 		plt.colorbar(im,ax=ax,orientation="horizontal")
-		if Nvert>1:
-			for iN in range(N4-1):
-				ax.axvline(Nvert*(iN+1),ls="--",c="k",lw=1)
+		# if Nvert>1:
+		# 	for iN in range(N4-1):
+		# 		ax.axvline(Nvert*(iN+1),ls="--",c="k",lw=1)
 		pp.savefig(fig,dpi=300,bbox_inches='tight')
 		plt.close(fig)
+
 
 		if Nvert==1:
 			pref_phase = pref_phase.reshape(N4*N4)
@@ -486,17 +507,17 @@ def plotting_routines(Version,load_location="local"):
 		pp.close()
 
 
-	results_dict = {
-					"pref_phase"	:	pref_phase,
-					"pref_ori"		:	pref_ori,
-					"l4"			:	l4,
-					"l23"			:	l23,
-					"Wlgn_to_4"		:	Wlgn_to_4,
-					"RF"			:	RFsd,
-					"sel"			:	sel,
-					}
-	cluster_name = load_location
-	misc.write_to_hdf5(results_dict,cluster_name,Version,data_dir+"two_layer/")
+	# results_dict = {
+	# 				"pref_phase"	:	pref_phase,
+	# 				"pref_ori"		:	pref_ori,
+	# 				"l4"			:	l4,
+	# 				"l23"			:	l23,
+	# 				"Wlgn_to_4"		:	Wlgn_to_4,
+	# 				"RF"			:	RFsd,
+	# 				"sel"			:	sel,
+	# 				}
+	# cluster_name = load_location
+	# misc.write_to_hdf5(results_dict,cluster_name,Version,data_dir+"two_layer/")
 
 	return None
 
@@ -519,6 +540,8 @@ def plotting_routines_time_dependent(Version,load_location="local"):
 	else:
 		load_path = data_dir + "two_layer/v{v}/".format(v=Version)
 	params = pickle.load(open(load_path + "config_v{v}.p".format(v=Version),"rb"))
+	update_params_dict.update_params(params)
+
 
 	sc = params["Wret_to_lgn_params"]["sigma"]
 	sr = params["W4to4_params"]["sigma_factor"]
@@ -527,14 +550,13 @@ def plotting_routines_time_dependent(Version,load_location="local"):
 	Nret = params["Nret"]
 	Nlgn = params["Nlgn"]
 	Nvert = params["Nvert"]
-	rA = int(params["Wlgn_to4_params"]["r_A"] * N4)
+	rA_on = int(params["Wlgn_to4_params"]["r_A_on"] * N4)
+	rA_off = int(params["Wlgn_to4_params"]["r_A_off"] * N4)
+	rA = np.max([rA_off,rA_on])
 	DA = np.min([2*rA + 5,N4])
-	inp_params = params["Inp_params"]
 	T_pd = params["Inp_params"]["pattern_duration"]
 	random_seed = params["random_seed"]
 	dt = params["dt"]
-	simulate_activity = params["Inp_params"]["simulate_activity"]
-	params["Inp_params"].update({"onoff_corr_factor" : 1.})
 	num_lgn_paths = params["num_lgn_paths"]
 	avg_no_inp = params["Inp_params"]["avg_no_inp"]
 	gamma_lgn = params["gamma_lgn"]
@@ -550,6 +572,8 @@ def plotting_routines_time_dependent(Version,load_location="local"):
 					"system" : "two_layer",
 					"Version" : Version
 					})
+
+
 	n = network.Network(Version,params)
 	lgn = n.generate_inputs(full_lgn_output=True,last_timestep=last_timestep,\
 							same_EI_input=True)
@@ -557,8 +581,12 @@ def plotting_routines_time_dependent(Version,load_location="local"):
 	print("lgn",np.nanmax(lgn[:,:,0]),np.nanmean(lgn[:,:,0]))
 
 
-	Wret_to_lgn,_,arbor,arbor2,_,W4to4,W23to23,W4to23,arbor4to23,_,W23to4 = n.system
+	Wret_to_lgn,Wlgn_to_4_init,arbor_on,arbor_off,arbor2,_,W4to4,W23to23,W4to23,\
+		arbor4to23,_,W23to4 = n.system
 
+	Wlgn_to_4_init = Wlgn_to_4_init.reshape(num_lgn_paths,N4**2*Nvert,Nlgn**2)
+	init_norm_alpha = np.nanmean(Wlgn_to_4_init,axis=(0,2))
+	init_norm_x = np.nanmean(Wlgn_to_4_init,axis=1)
 
 	## create folder
 	if load_location=="habanero":
@@ -606,7 +634,7 @@ def plotting_routines_time_dependent(Version,load_location="local"):
 	############################# FIGURES ###########################################
 
 	## ================ CONNECTIVITY ================================================
-	if not os.path.exists(image_dir_param + "connectivity.pdf"):
+	if True:#not os.path.exists(image_dir_param + "connectivity.pdf"):
 		pp = PdfPages(image_dir_param + "connectivity.pdf")
 		fig_list = plot_functions.plot_connectivity(W4to4,N4=N4,Nvert=Nvert,\
 					output_dict={},Wrec_mode=params["W4to4_params"]["Wrec_mode"])
@@ -614,6 +642,15 @@ def plotting_routines_time_dependent(Version,load_location="local"):
 			pp.savefig(fig,dpi=300,bbox_inches="tight")
 			plt.close(fig)
 		pp.close()
+
+		pp = PdfPages(image_dir_param + "connectivity_L23.pdf")
+		fig_list = plot_functions.plot_connectivity(W23to23,N4=N23,Nvert=1,\
+					output_dict={},Wrec_mode=params["W23_params"]["Wrec_mode"])
+		for fig in fig_list:
+			pp.savefig(fig,dpi=300,bbox_inches="tight")
+			plt.close(fig)
+		pp.close()
+
 
 	## ============= FEEDFORWARD INPUT ======================================
 	if not os.path.exists(image_dir_param + "lgn_input.pdf"):
@@ -649,7 +686,7 @@ def plotting_routines_time_dependent(Version,load_location="local"):
 
 
 	## ============= ACTIVITY ===============================================
-	if ("Wt" in keys and not os.path.exists(image_dir_param + "activity.pdf")):
+	if True:#("Wt" in keys and not os.path.exists(image_dir_param + "activity.pdf")):
 		pp = PdfPages(image_dir_param + "activity.pdf")
 	
 		inp_on,inp_of = 0,0
@@ -693,7 +730,7 @@ def plotting_routines_time_dependent(Version,load_location="local"):
 		## LAYER 4 ACTIVITY
 		if l4_t is not None:
 			l4_t = l4_t.reshape(-1,N4,N4*Nvert)
-			n = 10
+			n = 5
 			fig = plt.figure(figsize=(6*10,2*n//10*5))
 			fig.suptitle("l4 E act")
 			l4_first_npatterns = l4_t[1:(n+1)*avg_no_inp:avg_no_inp,...]
@@ -706,7 +743,7 @@ def plotting_routines_time_dependent(Version,load_location="local"):
 			
 			if params["Wlgn_to4_params"]["connectivity_type"]=="EI":
 				l4I_t = l4I_t.reshape(-1,N4,N4*Nvert)
-				n = 10
+				n = 5
 				fig = plt.figure(figsize=(6*10,2*n//10*5))
 				fig.suptitle("l4 I act")
 				l4I_first_npatterns = l4I_t[1:(n+1)*avg_no_inp:avg_no_inp,...]
@@ -720,7 +757,7 @@ def plotting_routines_time_dependent(Version,load_location="local"):
 		## LAYER 23 ACTIVITY
 		if l23_t is not None:
 			l23_t = l23_t.reshape(-1,N23,N23)
-			n = 10
+			n = 5
 			fig = plt.figure(figsize=(6*10,2*n//10*5))
 			fig.suptitle("l23 E act")
 			l23_first_npatterns = l23_t[1:(n+1)*avg_no_inp:avg_no_inp,...]
@@ -733,7 +770,7 @@ def plotting_routines_time_dependent(Version,load_location="local"):
 
 			if params["Wlgn_to4_params"]["connectivity_type"]=="EI":
 				l23I_t = l23I_t.reshape(-1,N4,N4*Nvert)
-				n = 10
+				n = 5
 				fig = plt.figure(figsize=(6*10,2*n//10*5))
 				fig.suptitle("l23 I act")
 				l23I_first_npatterns = l23I_t[1:(n+1)*avg_no_inp:avg_no_inp,...]
@@ -748,7 +785,7 @@ def plotting_routines_time_dependent(Version,load_location="local"):
 		labels = ["LGN input to E"]
 		fig = plt.figure(figsize=(25,10))
 		fig.suptitle(labels[0])
-		n = 10
+		n = 5
 		lgn_first_patterns = []
 		for istep in range(n):
 			istep_Wff = istep//params["Inp_params"]["avg_no_inp"]
@@ -762,7 +799,7 @@ def plotting_routines_time_dependent(Version,load_location="local"):
 			lgn_first_patterns.append(dotproduct)
 		lgn_first_patterns = np.array(lgn_first_patterns)
 		lgn_first_patterns = lgn_first_patterns.reshape(2*n,N4,N4*Nvert)
-		fig,_,_=plot_functions.grid_plot_twolayer(lgn_first_patterns,fig,ncol=10,nrow=2)
+		fig,_,_=plot_functions.grid_plot_twolayer(lgn_first_patterns,fig,ncol=n,nrow=2)
 		pp.savefig(fig,dpi=300,bbox_inches='tight')
 		plt.close(fig)
 
@@ -818,7 +855,7 @@ def plotting_routines_time_dependent(Version,load_location="local"):
 
 
 	## ============= Dimensionality ====================================
-	if not os.path.exists(image_dir_param + "dimensionality.pdf"):
+	if True:#not os.path.exists(image_dir_param + "dimensionality.pdf"):
 		pp = PdfPages(image_dir_param + "dimensionality.pdf")
 		
 		actEL4 = l4_t[1::avg_no_inp,...]
@@ -826,13 +863,14 @@ def plotting_routines_time_dependent(Version,load_location="local"):
 		actEL23 = l23_t[1::avg_no_inp,...]
 		actIL23 = l23I_t[1::avg_no_inp,...]
 		num_events = actEL4.shape[0]
-		num_patterns = np.min([100,num_events])
+		num_patterns = np.min([50,num_events])
 		print("Compute dimensionality from {} response patterns,\
 			  for every successive set of {} patterns.".format(num_events,num_patterns))
 		sys.stdout.flush()
 		all_dim,all_dim_lgn = [],[]
 		for i in range(num_events//num_patterns):
 			for j,act in enumerate([actEL4,actIL4,actEL23,actIL23]):
+				print("act",j,act.shape)
 				dim = analysis_tools.calc_dimension(act[i*num_patterns:(i+1)*num_patterns],\
 													inp="patterns",output=0)
 				all_dim.append(dim)
@@ -847,10 +885,10 @@ def plotting_routines_time_dependent(Version,load_location="local"):
 		
 		fig = plt.figure(figsize=(12,5))
 		ax = fig.add_subplot(121)
-		ax.plot(all_dim[:,0],'-r',label="L4 E")
-		ax.plot(all_dim[:,1],'--b',label="L4 I")
-		ax.plot(all_dim[:,2],'-m',label="L23 E")
-		ax.plot(all_dim[:,3],'--c',label="L23 I")
+		ax.plot(all_dim[:,0],'-or',label="L4 E")
+		ax.plot(all_dim[:,1],'--sb',label="L4 I")
+		ax.plot(all_dim[:,2],'-om',label="L23 E")
+		ax.plot(all_dim[:,3],'--sc',label="L23 I")
 		ax.legend(loc="best")
 		ax.set_ylabel("Dim")
 		ax.set_ylim(bottom=0)
@@ -866,59 +904,74 @@ def plotting_routines_time_dependent(Version,load_location="local"):
 
 
 	## ============= DYNAMICS FF WEIGHTS ====================================
-	if not os.path.exists(image_dir_param + "dyn_test.pdf"):
+	if True:#not os.path.exists(image_dir_param + "dyn_test.pdf"):
 		xcoords = [[6,5],[3,7],[0,0]]
 		xcoords = [[2,1],[3,1],[0,0]]
 		pp = PdfPages(image_dir_param + "dyn_test.pdf")
-		figt = plt.figure(figsize=(4*5,2*5))
+		ncol,nrow = 4,2
+		figt = plt.figure(figsize=(6*ncol,5*nrow))
 		labels = ["L4","L23"]
 		Ntot_x = [N4*Nvert,N23]
 		Ntot_y = [N4,N23]
 		for i,act in enumerate([l4_t,l23_t]):
-			ax = figt.add_subplot(2,4,1+i*2)
+			ax = figt.add_subplot(nrow,ncol,1+i*2)
 			im=ax.imshow(act,interpolation="nearest",cmap="binary",\
 						 aspect=1.*act.shape[1]/act.shape[0])
 			plt.colorbar(im,ax=ax)
 			ax.set_ylabel("Timesteps")
 			ax.set_xlabel("Act {}".format(labels[i]))
-			ax = figt.add_subplot(2,4,2+i*2)
-			ax.plot(np.nanmean(act,axis=1),'-ok',label="mean {}".format(labels[i]))
+			ax = figt.add_subplot(nrow,ncol,2+i*2)
+			ax.plot(np.nanmean(act[1:,:],axis=1),'-ok',label="mean {}".format(labels[i]))
 			act = act.reshape(-1,Ntot_y[i],Ntot_x[i])
 			for j in range(3):
-				ax.plot(act[:,xcoords[j][1],xcoords[j][0]],'-',\
+				ax.plot(act[1:,xcoords[j][1],xcoords[j][0]],'-',\
 						label="{},{}".format(labels[i],j+1),alpha=0.5)
 			ax.set_ylabel("mean, indiv activity {}".format(labels[i]))
 			ax.set_xlabel("Timesteps")
 			ax.legend(loc="best")
 			act = act.reshape(-1,Ntot_y[i]*Ntot_x[i])
 
-		ax = figt.add_subplot(234)
+		ax = figt.add_subplot(nrow,ncol,ncol+1)
 		ax.set_label("x={}, y={}".format(xcoords[0][0],xcoords[0][1]))
 		Wlgn_to_4_t = Wlgn_to_4_t.reshape(Wlgn_to_4_t.shape[0],num_lgn_paths,N4,N4*Nvert,-1)
 		ax.plot(Wlgn_to_4_t[:,0,xcoords[0][1],xcoords[0][0],:],"-k",alpha=0.5)
 		ax.plot(Wlgn_to_4_t[:,1,xcoords[0][1],xcoords[0][0],:],"--r",alpha=0.5)
 		ax.set_xlabel("Timesteps")
 		ax.set_ylabel("Won,off (k=on,g=off)")
-		ax = figt.add_subplot(235)
+		ax = figt.add_subplot(nrow,ncol,ncol+2)
 		ax.set_label("x={}, y={}".format(xcoords[1][0],xcoords[1][1]))
 		ax.plot(Wlgn_to_4_t[:,0,xcoords[1][1],xcoords[1][0],:],"-k",alpha=0.5)
 		ax.plot(Wlgn_to_4_t[:,1,xcoords[1][1],xcoords[1][0],:],"--r",alpha=0.5)
 		ax.set_xlabel("Timesteps")
 		ax.set_ylabel("Won,off (k=on,g=off)")
-		ax = figt.add_subplot(236)
+		ax = figt.add_subplot(nrow,ncol,ncol+3)
 		ax.set_label("x={}, y={}".format(xcoords[2][0],xcoords[2][1]))
 		ax.plot(Wlgn_to_4_t[:,0,xcoords[2][1],xcoords[2][0],:],"-k",alpha=0.5)
 		ax.plot(Wlgn_to_4_t[:,1,xcoords[2][1],xcoords[2][0],:],"--r",alpha=0.5)
 		ax.set_xlabel("Timesteps")
 		ax.set_ylabel("Won,off (k=on,g=off)")
+
+		Wlgn_to_4_t = Wlgn_to_4_t.reshape(Wlgn_to_4_t.shape[0],num_lgn_paths,N4,N4*Nvert,-1)
+		arbor2 = arbor2.reshape(num_lgn_paths,N4,N4*Nvert,-1)
+		WE = Wlgn_to_4_t[:,:2,...]
+		Wlim = params["Wlgn_to4_params"]["Wlim"]
+		frozen = np.logical_or(WE[:,arbor2[:2,...]>0]<=0,WE[:,arbor2[:2,...]>0]>=Wlim)
+		ax = figt.add_subplot(nrow,ncol,ncol+4)
+		ax.plot(np.nanmean(frozen,axis=1), '-k')
+		ax.set_xlabel("Timesteps")
+		ax.set_ylabel("Fraction of frozen weights")
+		ax.set_ylim(0,1)
+
 		pp.savefig(figt,dpi=300,bbox_inches='tight')
 		plt.close(figt)
+
 		pp.close()
+		arbor2 = arbor2.reshape(num_lgn_paths,N4**2*Nvert,-1)
 		Wlgn_to_4_t = Wlgn_to_4_t.reshape(Wlgn_to_4_t.shape[0],num_lgn_paths,N4*N4*Nvert,-1)
 		print("dynamics done")
 
 	## ============= CHANGE FF WEIGHTS ======================================
-	if False:
+	if True:
 		pp = PdfPages(image_dir_param + "change_Weights.pdf")
 		fig = plt.figure(figsize=(24,5))
 		deltaW = Wlgn_to_4_t[:-1,...] - Wlgn_to_4_t[1:,...]
@@ -1015,7 +1068,7 @@ def plotting_routines_time_dependent(Version,load_location="local"):
 		print("change done")
 
 	## ============= RF and PF ==============================================
-	if not os.path.exists(image_dir_param + "rec_field.pdf"):
+	if True:#not os.path.exists(image_dir_param + "rec_field.pdf"):
 		pp = PdfPages(image_dir_param + "rec_field.pdf")
 		## receptive and projection fields
 		## visualization of SD = S_on - S_off
@@ -1044,24 +1097,80 @@ def plotting_routines_time_dependent(Version,load_location="local"):
 		pp.savefig(fig,dpi=300,bbox_inches='tight')
 		plt.close(fig)
 
-		ncol,nrow = 10,10
+		# development of RF, 25 snapshots
+		ncol,nrow = 5,5
 		fig = plt.figure(figsize=(6*ncol,5*nrow))
-		for istep in range(np.min([ncol*nrow,timesteps])):
-			ax = fig.add_subplot(nrow,ncol,1+istep)
-			ax.set_title("Timestep={}".format(1+istep))
-			idsf = Wlgn_to_4_t[istep,0,...] - Wlgn_to_4_t[istep,1,...]
-			idsf = idsf.reshape(N4,N4*Nvert,Nlgn,Nlgn)
-			iRF,_,_,_ = analysis_tools.get_RF_form(idsf,N4,Nlgn,DA,calc_PF=False,\
-													Nvert=Nvert,mode="other")
-			im=ax.imshow(iRF,interpolation="nearest",cmap="RdBu_r")
-			plt.colorbar(im,ax=ax)
+		fig.suptitle("Development of RF")
+		timesteps_to_plot = np.linspace(1,1*ncol*nrow,ncol*nrow).astype(int)
+		print("timesteps",timesteps,timesteps_to_plot,Wlgn_to_4_t.shape)
+		for iplot in range(np.min([ncol*nrow,timesteps])):
+			istep = timesteps_to_plot[iplot]
+			if istep<Wlgn_to_4_t.shape[0]:
+				ax = fig.add_subplot(nrow,ncol,1+iplot)
+				ax.set_title("Timestep={}".format(1+istep*params["saving_stepsize"]))
+				idsf = Wlgn_to_4_t[istep,0,...] - Wlgn_to_4_t[istep,1,...]
+				idsf = idsf.reshape(N4,N4*Nvert,Nlgn,Nlgn)
+				iRF,_,_,_ = analysis_tools.get_RF_form(idsf,N4,Nlgn,DA,calc_PF=False,\
+														Nvert=Nvert,mode="other")
+				im=ax.imshow(iRF,interpolation="nearest",cmap="RdBu_r")
+				plt.colorbar(im,ax=ax)
 		pp.savefig(fig,dpi=300,bbox_inches='tight')
+		plt.close(fig)
+
+
+		## conservation of ff weights, across x and alpha+i
+		t0,t1,t2=1,timesteps//2,timesteps-1
+		ncol,nrow = 5,2
+		fig = plt.figure(figsize=(6*ncol,5*nrow))
+		fig.suptitle("conservation of ff weights, across x and alpha+i")
+		for k,kt in enumerate([t0,t1,t2]):
+			mean_x =\
+			 np.nanmean(Wlgn_to_4_t[kt,:2,...].reshape(2,N4**2*Nvert,Nlgn**2),axis=1)
+			mean_alpha =\
+			 np.nanmean(Wlgn_to_4_t[kt,:2,...].reshape(2,N4**2*Nvert,Nlgn**2),axis=(0,2))
+			ax1 = fig.add_subplot(nrow,ncol,1+k)
+			ax1.set_title("t={}".format(kt))
+			ax1.plot(np.copy(mean_x.flatten()),'-k')
+			ax1.plot(init_norm_x.flatten()[:2*Nlgn**2],"--",c="gray",zorder=10)
+			ax1.set_xlabel("LGN units")
+			ax1.set_ylabel("Average weight")
+			ax2 = fig.add_subplot(nrow,ncol,1+k+ncol)
+			ax2.plot(np.copy(mean_alpha),'-k',label="t={}".format(kt))
+			ax2.plot(init_norm_alpha,"--",c="gray",label="init")
+			ax2.legend(loc="best")
+			ax2.set_xlabel("Cortical units")
+			ax2.set_ylabel("Average weight")
+		ax1 = fig.add_subplot(nrow,ncol,ncol-1)
+		ax1.set_title("t={}".format(kt))
+		im=ax1.imshow(np.sum(np.copy(mean_x).reshape(2,Nlgn,Nlgn),axis=0),\
+						interpolation="nearest",cmap="binary")
+		plt.colorbar(im,ax=ax1)
+		ax2 = fig.add_subplot(nrow,ncol,ncol*2-1)
+		im=ax2.imshow(np.copy(mean_alpha).reshape(N4,N4),interpolation="nearest",cmap="binary")
+		plt.colorbar(im,ax=ax2)
+
+		mean_x_t =\
+		 np.nanmean(Wlgn_to_4_t[:,:2,...],axis=2)
+		mean_alpha_t =\
+		 np.nanmean(Wlgn_to_4_t[:,:2,...],axis=(1,3))
+		print("mean_alpha_t",mean_alpha_t.shape,mean_x_t.shape)
+		ax = fig.add_subplot(nrow,ncol,ncol)
+		ax.errorbar(np.arange(timesteps+1),np.nanmean(mean_x_t,axis=(1,2)),\
+					yerr=np.nanstd(mean_x_t,axis=(1,2)),fmt="+-")
+		ax.set_xlabel("Timesteps")
+		ax.set_ylabel("Avg weight summed over ON/OFF and x")
+		ax = fig.add_subplot(nrow,ncol,ncol*2)
+		ax.errorbar(np.arange(timesteps+1),np.nanmean(mean_alpha_t,axis=1),\
+					yerr=np.nanstd(mean_alpha_t,axis=1),fmt="+-")
+		ax.set_xlabel("Timesteps")
+		ax.set_ylabel(r"Avg weight summed over ON/OFF and $\alpha$")
+		pp.savefig(fig,dpi=300,bbox_inches="tight")
 		plt.close(fig)
 
 		pp.close()
 
 
-	if True:#(not os.path.exists(image_dir_param + "W4to23_dev.pdf")):
+	if False:#(not os.path.exists(image_dir_param + "W4to23_dev.pdf")):
 		pp = PdfPages(image_dir_param + "W4to23_dev.pdf")
 		## receptive and projection fields
 		W4to23_EE = W4to23[:N23**2,:N4**2].reshape(N23,N23,N4,N4)

@@ -1,5 +1,6 @@
 import numpy as np
 from scipy import linalg
+from scipy.signal import convolve2d
 from copy import copy
 
 from bettina.modeling.ori_dev_model.tools import gen_gaussian_random_field as ggrf
@@ -19,37 +20,35 @@ def linear_arbor_falloff(d,radius,inner_radius):
 							 outer_radius/(outer_radius-inner_radius)
 	return arbor
 
-def gen_ecp(x, y, conn_params):
-	if "kc" in conn_params.keys():
-		kc = conn_params["kc"]
-	else:
-		kc = 3.## number of wavelengths per layer
-	if "n" in conn_params.keys():
-		n = conn_params["n"]
-	else:
-		n = 30
-	rng = conn_params["rng"]
-	A = (rng.random(n)*0.2+0.8)[:,None,None]#1.0
 
-	## Long-range interactions
-	j = np.arange(n)
-	kj = kc*2*np.pi*np.stack([np.cos(j*np.pi/n), np.sin(j*np.pi/n)])
-	lj = rng.choice([-1.,1.],size=n)
-	lk = (lj[None,:]*kj)[:,:,None,None]
-	phi = rng.uniform(low=0,high=2*np.pi,size=n)[:,None,None]
-	ecp = np.sum(A*np.exp(1j*lk[0,...]*x[None,...] + 1j*lk[1,:,...]*y[None,...] + phi),axis=0)
-	
-	sigma = 0.3/kc/2/np.pi*n
-
-	return ecp, sigma
 
 
 def gaussian(x,y,s):
 	return np.exp(-(x**2+y**2)/2./s**2)#1./2.*np.pi/s**2*
 
 
+def gaussian_filter(ar,sigma):
+	"""
+	filters array ar with gaussian of width sigma
+
+	"""
+	N = ar.shape[-1]
+	grid = np.linspace(-0.5,0.5,N,endpoint=False)
+	x,y = np.meshgrid(grid,grid)
+	g = gaussian(x,y,sigma)
+
+	if ar.ndim==3:
+		filtererd_ar = []
+		for iar in ar:
+			filtererd_ar.append(convolve2d(g,iar,mode="same",boundary="wrap"))
+		return np.array(filtererd_ar)
+	else:
+		filtered_ar = convolve2d(g,ar,mode="same",boundary="wrap")
+		return filtered_ar
+
+
 class Connectivity:
-	def __init__(self, from_size, to_size, random_seed, Nvert=1,full_output=False):
+	def __init__(self, from_size, to_size, random_seed, Nvert=1, full_output=False):
 		self.from_size = from_size
 		self.to_size = to_size
 		if isinstance(Nvert,int):
@@ -64,6 +63,34 @@ class Connectivity:
 		self.full_output_dict = {}
 		
 	
+	def gen_ecp(self, x, y, conn_params):
+		"""
+		generate ecp - solution of wolf model
+		kc 		:	critical wave number
+		n 		:	number of modes
+		"""
+		if "kc" in conn_params.keys():
+			kc = conn_params["kc"]
+		else:
+			kc = 3.## number of wavelengths per layer
+		if "n" in conn_params.keys():
+			n = conn_params["n"]
+		else:
+			n = 30
+		A = (self.rng.randn(n)*0.2+0.8)[:,None,None]#1.0
+
+		## Long-range interactions
+		j = np.arange(n)
+		kj = kc*2*np.pi*np.stack([np.cos(j*np.pi/n), np.sin(j*np.pi/n)])
+		lj = self.rng.choice([-1.,1.],size=n)
+		lk = (lj[None,:]*kj)[:,:,None,None]
+		phi = self.rng.uniform(low=0,high=2*np.pi,size=n)[:,None,None]
+		ecp = np.sum(A*np.exp(1j*lk[0,...]*x[None,...] + 1j*lk[1,:,...]*y[None,...] + phi),axis=0)
+		
+		sigma = 0.3/kc/2/np.pi*n
+
+		return ecp, sigma
+
 	def create_matrix(self, conn_params, profile, **kwargs):
 		grid = np.linspace(0,1,self.from_size[0],endpoint=False)
 		# grid = np.repeat(grid,self.Nvert[0])
@@ -88,30 +115,40 @@ class Connectivity:
 		else:
 			arbor = None
 
+
 		## Heterogeneously varying anisotropic Connectivity (incoming conn are elliptical)
 		if "heterogeneity_type" in conn_params.keys():
 			if conn_params["heterogeneity_type"] is not None:
+				## draw spatially uncorrelated random fields
+				ecc_field = self.rng.randn(*xto.shape)
+				size_field_x = self.rng.randn(*xto.shape)
+				z_field = self.rng.randn(*xto.shape) + 1j*self.rng.randn(*xto.shape)
+
+				## spatially filter rnd fields with gaussian
+				if conn_params["heterogeneity_type"]=="smooth":
+					sigma = conn_params["smoothness_width"]
+					ecc_field = gaussian_filter(ecc_field,sigma)
+					size_field_x = gaussian_filter(size_field_x,sigma)
+					z_field = gaussian_filter(z_field,sigma)
+
 				## eccentricity distribution
-				ecc_field = self.rng.randn(*xto.shape)[None,None,:,:]
 				ecc_field = conn_params["mean_eccentricity"] +\
 							ecc_field/np.std(ecc_field)*conn_params["SD_eccentricity"]
 				ecc_field = np.clip(ecc_field,0.0,0.95)
-				print("ecc_field",np.nanmin(ecc_field),np.nanmax(ecc_field))
+				
 				## size distribution
-				size_field_x = self.rng.randn(*xto.shape)[None,None,:,:]
 				size_field_x = (1 + size_field_x/np.std(size_field_x)*conn_params["SD_size"])
 				size_field_y = size_field_x*np.sqrt(1 - ecc_field**2)
-				## orientations of elongated connections
-				z_field = self.rng.randn(*xto.shape) + 1j*np.random.randn(*xto.shape)
+				
+				## orientations of elongated connections				
 				orientation_field = np.angle(z_field)*0.5
 				cos_theta = np.cos(orientation_field)[None,None,:,:]
 				sin_theta = np.sin(orientation_field)[None,None,:,:]
-				if conn_params["heterogeneity_type"]=="smooth":
-					print('TODO: implement smooth heterogeneity_type')
-					pass
-				xdelta2 = (xdelta*cos_theta - ydelta*sin_theta) * size_field_x
-				ydelta = (xdelta*sin_theta + ydelta*cos_theta) * size_field_y
+
+				xdelta2 = (xdelta*cos_theta - ydelta*sin_theta) * size_field_x[None,None,:,:]
+				ydelta = (xdelta*sin_theta + ydelta*cos_theta) * size_field_y[None,None,:,:]
 				xdelta = xdelta2
+
 
 		if profile=="linear":
 			pairwise_distance = np.sqrt(xdelta**2 + ydelta**2)
@@ -121,6 +158,7 @@ class Connectivity:
 			## TODO: add heterogeneity
 			sigma = conn_params["sigma"]
 			ampl = conn_params["ampl"]
+			print("sigma",sigma,ampl)
 			noise_str = conn_params["noise"]
 			if noise_str>0:
 				noise_field = self.rng.uniform(1-noise_str,1,xdelta.size).reshape(xdelta.shape)
@@ -223,8 +261,8 @@ class Connectivity:
 		elif profile=="Gaussian_prob_density":
 			## connectivity not really clustered
 			"""construct recurrent connectivity such that connections have given
-			density. realization is determined by differnece in their phase, weight
-			is determined by spatial distance"""
+			density. realization is determined by differnece in their phase (rnd field),
+			weight is determined by spatial distance"""
 			sigma = conn_params["sigma"]
 			ampl = conn_params["ampl"]
 			noise_str = conn_params["noise"]
@@ -272,7 +310,7 @@ class Connectivity:
 				noise_field = 1.
 			disc_gaussian = gaussian(xdelta,ydelta,sigma)
 			conn_matrix = disc_gaussian.reshape(np.prod(self.to_size)*self.Nvert[1],\
-				np.prod(self.from_size)*self.Nvert[0])
+												np.prod(self.from_size)*self.Nvert[0])
 
 			ncluster = conn_params["ncluster"]
 			phase_field = self.rng.uniform(0,np.pi,np.prod(self.from_size)*self.Nvert[0])
@@ -321,26 +359,33 @@ class Connectivity:
 			
 		elif profile=="zmodel":
 			assert self.from_size==self.to_size, "choose same fromsize and tosize"
-			assert self.Nvert==1, "currently implemented for Nvert=1"
+			assert self.Nvert==(1,1), "currently implemented for Nvert=1"
 
 			## Short-range Mexican-hat like interactions
-			mh = self.create_matrix(conn_params, profile="Mexican-hat")
-			mh = mh.reshape(self.to_size[0],self.to_size[1]*self.Nvert[1],\
-							self.from_size[0],self.from_size[1]*self.Nvert[0])
+			# mh = self.create_matrix(conn_params, profile="Mexican-hat")
+			# mh = mh.reshape(self.to_size[0],self.to_size[1]*self.Nvert[1],\
+			# 				self.from_size[0],self.from_size[1]*self.Nvert[0])
+			## short-range Gaussian interaction
+			sigma = conn_params["sigma"]
+			ampl = conn_params["ampl"]
+			disc_gaussian = gaussian(xdelta,ydelta,sigma)
+			norm_factor = np.sum(disc_gaussian,axis=(2,3))[:,:,None,None]
+			disc_gaussian = ampl * disc_gaussian / norm_factor
 
 			## Long-range interactions
-			dist_dep_gauss = gaussian(xdelta,ydelta,sigma) / np.prod(self.from_size) / self.Nvert[0]
-			ecp, sigma = gen_ecp(xfrom, yfrom, conn_params)
-			sigmaz = 1.2*np.nanmean(np.abs(ecp))
+			dist_dep_gauss = gaussian(xdelta,ydelta,0.2) / np.prod(self.from_size) / self.Nvert[0]
+			ecp, sigma_ecp = self.gen_ecp(xfrom, yfrom, conn_params)
+			sigmaz = 0.5*np.nanmean(np.abs(ecp))
 			deltaz = ecp[:,:,None,None] - ecp[None,None,:,:]
 			ori_dep_gauss = gaussian(np.abs(deltaz),0,sigmaz) / np.prod(self.from_size) / self.Nvert[0]
-			zconn = dist_dep_gauss * ori_dep_gauss/  \
-			 		np.sum(ori_dep_gauss*dist_dep_gauss,axis=(0,1))[None,None,:,:]
+			zconn = dist_dep_gauss * ori_dep_gauss
+			zconn[np.sqrt(xdelta**2+ydelta**2)<(sigma*2.)] = 0.
+			zconn /= np.sum(zconn,axis=(2,3))[:,:,None,None]
 
-			conn_matrix = (1.*mh + 1.*zconn)
-			# conn_matrix /= np.sum((conn_matrix),axis=(0,1))[None,None,:,:]
-			if arbor is not None:
-				conn_matrix[np.logical_not(arbor)] = 0.
+			conn_matrix = (disc_gaussian + 0.05*zconn)
+			# conn_matrix /= np.sum((conn_matrix),axis=(2,3))[:,:,None,None]
+			# if arbor is not None:
+			# 	conn_matrix[np.logical_not(arbor)] = 0.
 
 		elif profile in ("random_delta","initialize"):
 			s_noise = conn_params["s_noise"]
@@ -555,39 +600,48 @@ class Connectivity_2pop():
 		##TODO: different random seed for E, I conn
 
 		profile_conn = profile.replace("2pop","")
+		print("profile_conn",profile_conn)
 		print("Warning: Currently E and I units are matched in their abs phases/same realization of existing conns")
 		if not "density" in conn_params.keys():
 			conn_params["density"] = 1.
 		if not "ncluster" in conn_params.keys():
 			conn_params["ncluster"] = 1
-		
+		if "Gaussian" in profile_conn:
+			profile_conn_EE,profile_conn_EI,profile_conn_IE,profile_conn_II = \
+				profile_conn,profile_conn,profile_conn,profile_conn
+		elif profile_conn=="zmodel":
+			profile_conn_EE = "zmodel"
+			profile_conn_IE = "zmodel"
+			profile_conn_EI,profile_conn_II = ["Gaussian"]*2
+
+
 		W4to4_params_EE = copy(conn_params)
 		W4to4_params_EE.update({"sigma" : conn_params["sigma_EE"] * sigma_rec,\
 						 		"ampl" : conn_params["aEE"], "type" : "EE"})
 		conn_EE = Connectivity(self.from_Ne, self.to_Ne,\
 				 self.random_seed, self.Nvert,full_output=self.full_output\
-				 ).create_matrix(W4to4_params_EE, profile_conn, **kwargs)
+				 ).create_matrix(W4to4_params_EE, profile_conn_EE, **kwargs)
 
 		W4to4_params_IE = copy(conn_params)
 		W4to4_params_IE.update({"sigma" : conn_params["sigma_IE"] * sigma_rec,\
 						 		"ampl" : conn_params["aIE"], "type" : "IE"})
 		conn_IE = Connectivity(self.from_Ne, self.to_Ni,\
 		 			self.random_seed, self.Nvert,full_output=self.full_output\
-		 			).create_matrix(W4to4_params_IE, profile_conn, **kwargs)
+		 			).create_matrix(W4to4_params_IE, profile_conn_IE, **kwargs)
 
 		W4to4_params_EI = copy(conn_params)
 		W4to4_params_EI.update({"sigma" : conn_params["sigma_EI"] * sigma_rec,\
 								 "ampl" : conn_params["aEI"], "type" : "EI"})
 		conn_EI = Connectivity(self.from_Ni, self.to_Ne,\
 				 self.random_seed, self.Nvert,full_output=self.full_output\
-				 ).create_matrix(W4to4_params_EI, profile_conn, **kwargs)
+				 ).create_matrix(W4to4_params_EI, profile_conn_EI, **kwargs)
 
 		W4to4_params_II = copy(conn_params)
-		W4to4_params_II.update({"sigma" : conn_params["sigma_II"],\
+		W4to4_params_II.update({"sigma" : conn_params["sigma_II"] * sigma_rec,\
 						 		"ampl" : conn_params["aII"], "type" : "II"})
 		conn_II = Connectivity(self.from_Ni, self.to_Ni,\
 		 			self.random_seed, self.Nvert,full_output=self.full_output\
-		 			).create_matrix(W4to4_params_II, profile_conn, **kwargs)
+		 			).create_matrix(W4to4_params_II, profile_conn_II, **kwargs)
 
 		if self.full_output:
 			conn_EE,output_dict_EE = conn_EE
@@ -652,7 +706,7 @@ if __name__=="__main__":
 	conn = Connectivity(fromsize,tosize,random_seed=12345)
 
 	## test "gabor"
-	if True:
+	if False:
 		grid = np.linspace(0,1,N,endpoint=False)
 		xto,yto = np.meshgrid(grid,grid)
 		conn_params = {"rng" : np.random.RandomState(20200205)}
@@ -696,22 +750,42 @@ if __name__=="__main__":
 
 	## test "2pop"
 	if False:
-		N4 = 10
+		N4 = 25
 		W4 = Connectivity_2pop((N4,N4), (N4,N4), (N4,N4), (N4,N4),\
-				random_seed=12345, Nvert=Nvert)
-		W4to4 = W4.create_matrix_2pop(W4to4_params,"Gaussian")
-		print("W4to4",W4to4.shape)
+								random_seed=12345, Nvert=Nvert)
+		W4to4_params["sigma_factor"] = 0.5
+		W4to4 = W4.create_matrix_2pop(W4to4_params,"Gaussian2pop")
+
+		grid = np.linspace(0,1,N4,endpoint=False)
+		xto,yto = np.meshgrid(grid,grid)
+		ecp, sigma_ecp = Connectivity((N4,N4),(N4,N4),19).gen_ecp(xto, yto, W4to4_params)
+
+		fig = plt.figure()
+		ax = fig.add_subplot(131)
+		im=ax.imshow(W4to4,interpolation="nearest",cmap="binary")
+		plt.colorbar(im,ax=ax)
+		ax = fig.add_subplot(132)
+		im=ax.imshow(W4to4[N4//2+N4**2//2-2,:N4**2*Nvert].reshape(N4,N4*Nvert),\
+						interpolation="nearest",cmap="binary")
+		plt.colorbar(im,ax=ax)
+		ax = fig.add_subplot(133)
+		im=ax.imshow(np.imag(ecp),\
+						interpolation="nearest",cmap="binary")
+		plt.colorbar(im,ax=ax)
+		plt.show()
 		exit()
 
-	## test heterogeneity
-	if True:
+	## test z-model connectivity
+	if False:
 		N4 = N
-		W4to4_params.update({"mean_eccentricity"	:	0.5,
-							"SD_eccentricity"	:	0.05,
-							"SD_size"			:	0.05,
-							"heterogeneity_type":	"independent",})
-		W4 = Connectivity((N4,N4), (N4,N4),random_seed=12345, Nvert=Nvert)
-		conn = W4.create_matrix(W4to4_params,profile="Gaussian")
+		W4to4_params.update({"kc"	:	3.,
+							 "n"	:	30,
+							 "rng"	:	np.random.RandomState(13*90),
+							 "sigma":	0.3,
+							 "ampl"	:	1.,
+							})
+		W4 = Connectivity((N4,N4), (N4,N4), random_seed=12345, Nvert=1)
+		conn = W4.create_matrix(W4to4_params,profile="zmodel")
 
 		fig = plt.figure()
 		ax = fig.add_subplot(131)
@@ -723,7 +797,51 @@ if __name__=="__main__":
 						cmap="binary")
 		plt.colorbar(im,ax=ax)
 		plt.show()
-		# exit()
+		exit()
+
+	## test heterogeneity
+	if True:
+		N4 = N
+		sigma_factor = 0.4
+		W4to4_params.update({"sigma"	:	0.2*sigma_factor,
+							"mean_eccentricity"	:	0.8,
+							"SD_eccentricity"	:	0.05,
+							"SD_size"			:	0.05,
+							"heterogeneity_type":	"independent",})
+		W4 = Connectivity((N4,N4), (N4,N4),random_seed=12345, Nvert=Nvert)
+		conn = W4.create_matrix(W4to4_params,profile="linear")
+
+		fig = plt.figure()
+		ax = fig.add_subplot(131)
+		im=ax.imshow(conn[:N4**2*Nvert,N4//2+N4**2//2+4].reshape(N4,N4*Nvert),interpolation="nearest",\
+						cmap="binary")
+		plt.colorbar(im,ax=ax)
+		ax = fig.add_subplot(132)
+		im=ax.imshow(conn[N4//2+N4**2//2-2,:N4**2*Nvert].reshape(N4,N4*Nvert),interpolation="nearest",\
+						cmap="binary")
+		plt.colorbar(im,ax=ax)
+
+		W4to4_params.update({"sigma"	:	0.2*sigma_factor,
+							"mean_eccentricity"	:	0.8,
+							"SD_eccentricity"	:	0.05,
+							"SD_size"			:	0.05,
+							"heterogeneity_type":	None,})
+		W4 = Connectivity((N4,N4), (N4,N4),random_seed=12345, Nvert=Nvert)
+		conn = W4.create_matrix(W4to4_params,profile="linear")
+
+		fig = plt.figure()
+		ax = fig.add_subplot(131)
+		im=ax.imshow(conn[:N4**2*Nvert,N4//2+N4**2//2+4].reshape(N4,N4*Nvert),interpolation="nearest",\
+						cmap="binary")
+		plt.colorbar(im,ax=ax)
+		ax = fig.add_subplot(132)
+		im=ax.imshow(conn[N4//2+N4**2//2-2,:N4**2*Nvert].reshape(N4,N4*Nvert),interpolation="nearest",\
+						cmap="binary")
+		plt.colorbar(im,ax=ax)
+
+		plt.show()
+		exit()
+
 	## test arbor
 	if False:
 		N4 = N
