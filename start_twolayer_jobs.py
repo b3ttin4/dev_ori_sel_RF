@@ -26,15 +26,15 @@ def runjobs_oridevModel_Cluster():
 	script_name = "run_twolayer"
 
 	iterator_dict = {
-					"sI" : np.array([0.3]), #([0.2,0.5,1.0,1.4]),
-					"rC" : np.array([0.3]), #([0.1,0.2,0.5,0.95]),
-					"rA" : np.array([0.2]), #"0.2 0.25",,
-					"betaP" : np.array([0.0004]), ##(default: 0.005),
+					# "sI" : np.array([0.3]), #([0.2,0.5,1.0,1.4]),
+					"rC" : np.array([0.2]), #([0.1,0.2,0.5,0.95]),
+					"rA" : np.array([0.3]), #"0.2 0.25",,
+					"betaP" : np.array([5]), ##(default: 0.005),
 
 					# "mult_norm" : np.array(["homeostatic"]),	#default: x,
 					# "norm" : np.array(["x","xalpha","alpha"]),
 
-					"runtime" : np.array([600000]), #1000000,
+					"runtime" : np.array([50000]), #1000000,
 					# "avg_no_inp" : np.array([20]),
 					# "onoff_rel_weight" : np.array([2.]),
 					# "off_bias_strength" : np.array([1.5,2.]),
@@ -46,7 +46,7 @@ def runjobs_oridevModel_Cluster():
 					## layer 4
 					# "nonlin" : np.array(["powerlaw"]), ##(default: "rectifier")
 					# "gamma_lgn" : gamma_lgn,
-					"wrec" : np.array(["Gaussian2pop"]), ## default: Gaussian2pop,
+					# "wrec" : np.array(["Gaussian2pop"]), ## default: Gaussian2pop,
 					# "w4to4_ew" : np.array([1.02]),	## default: 0.95
 					# "density" : np.array([0.3,0.7]),
 					# "noise_rec" : np.array([0.2,0.4,0.6]),
@@ -57,7 +57,7 @@ def runjobs_oridevModel_Cluster():
 					# "rec_conn_mean_ecc" : np.array([0.7]),
 
 					## Layer 23 
-					"w23to4_ampl" : np.array([1.,2.]),
+					# "w23to4_ampl" : np.array([1.,2.]),
 					# "w4to23_width" : np.array([0.075/0.1]),
 
 					## FF connections
@@ -65,10 +65,12 @@ def runjobs_oridevModel_Cluster():
 					# "MH_strength" : np.array([1.]),
 					"arbor_profile" : ["heaviside"],
 					# "lgn_corr_het"	: np.array(["independent"]),
-					"connectivity_type" : np.array(["EI"]),
+					# "connectivity_type" : np.array(["EI"]),
 					# "arbor_ampl" : np.array(["1. 1.2","1. 1.5","1. 2."]), #"1. 2.",
 
-					"saving_stepsize" : np.array([50]),
+					"saving_stepsize" : np.array([20]),
+
+					"load_params_file" : np.array(["GaussInpCorr"]) # GaussInpCorr  antolik_etal
 					}
 
 
@@ -98,7 +100,7 @@ def runjobs_oridevModel_Cluster():
 	count=0;
 	for i,var_setting in enumerate(product(*var_list)):
 		time.sleep(0.2)
-		Version = 0+i#misc.get_version(data_dir + "two_layer/",version=None,readonly=False)
+		Version = 14+i#misc.get_version(data_dir + "two_layer/",version=None,readonly=False)
 		print("Version={}".format(Version));sys.stdout.flush()
 		c1 = "{:s} --V {:.0f}".format(inpath,Version) + var_string.format(*var_setting)
 
@@ -112,7 +114,7 @@ def runjobs_oridevModel_Cluster():
 
 		if current_user=="hein":
 			text_file.write("#SBATCH --job-name="+jobname+ "\n")
-			text_file.write("#SBATCH -t 0-05:00  \n")
+			text_file.write("#SBATCH -t 0-12:00  \n")
 
 
 			# text_file.write("#SBATCH --mem=120gb \n")
@@ -135,7 +137,7 @@ def runjobs_oridevModel_Cluster():
 		elif current_user=="bh2757":
 			text_file.write("#SBATCH --account=theory \n")
 			text_file.write("#SBATCH --job-name="+jobname+ "\n")
-			text_file.write("#SBATCH -t 1-24:00  \n")## four days for 32x32
+			text_file.write("#SBATCH -t 0-12:00  \n")## four days for 32x32
 
 			# text_file.write("#SBATCH --mem=120gb \n")
 			# text_file.write("#SBATCH --gres=gpu:1 \n")
@@ -148,9 +150,10 @@ def runjobs_oridevModel_Cluster():
 			# text_file.write("source /rigel/home/bh2757/.bashrc \n")
 			text_file.write("source /burg/home/bh2757/.bashrc \n")
 			text_file.write("module load anaconda \n")
-			text_file.write("module load singularity \n")
-			# text_file.write("singularity exec tensorflow_latest.sif python " + c1 + " \n")
-			text_file.write("singularity exec intel-optimized-tensorflow_latest.sif python " + c1 + " \n")
+			# text_file.write("module load singularity \n")
+			## text_file.write("singularity exec tensorflow_latest.sif python " + c1 + " \n")
+			# text_file.write("singularity exec intel-optimized-tensorflow_latest.sif python " + c1 + " \n")
+			text_file.write("python " + c1 + " \n")
 			text_file.write("echo $PATH  \n")
 			text_file.write("exit 0  \n")
 			text_file.close()

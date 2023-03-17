@@ -289,28 +289,48 @@ def plot_connectivity(W4to4,**kwargs):
 
 
 	## examples of individual connectivity matrices
-	idx = N4*N4*Nvert//2 + N4*Nvert//2
+	idx = (N4*N4*Nvert)//2 + ((N4+1)%2) * N4*Nvert//2
 	fig = plt.figure()
 	fig.suptitle("Examples")
 	ax = fig.add_subplot(221)
 	ax.set_title("E to E conn")
 	im=ax.imshow(W4to4[:N4*N4*Nvert,idx].reshape(N4,N4*Nvert),interpolation="nearest",\
-		 		cmap="binary")
+		 		cmap="binary",vmin=0)
 	plt.colorbar(im,ax=ax)
 	if "2pop" in Wrec_mode:
 		ax = fig.add_subplot(222)
 		ax.set_title("I to E conn")
 		im=ax.imshow(-W4to4[:N4*N4*Nvert,idx-N4**2*Nvert].reshape(N4,N4*Nvert),\
-					 interpolation="nearest",cmap="binary")
+					 interpolation="nearest",cmap="binary",vmin=0)
+		plt.colorbar(im,ax=ax)
 		ax = fig.add_subplot(223)
 		ax.set_title("E to I conn")
 		im=ax.imshow(W4to4[N4*N4*Nvert:,idx].reshape(N4,N4*Nvert),interpolation="nearest",\
-					 cmap="binary")
+					 cmap="binary",vmin=0)
+		plt.colorbar(im,ax=ax)
 		ax = fig.add_subplot(224)
 		ax.set_title("I to I conn")
-		im=ax.imshow(-W4to4[N4*N4*Nvert:,idx-N4**2*Nvert].reshape(N4,N4*Nvert),\
-					 interpolation="nearest",cmap="binary")
+		im=ax.imshow(-W4to4[N4*N4*Nvert:,idx+N4**2*Nvert].reshape(N4,N4*Nvert),\
+					 interpolation="nearest",cmap="binary",vmin=0)
+		plt.colorbar(im,ax=ax)
 	fig_list.append(fig)
+	plt.close(fig)
+
+	if "2pop" in Wrec_mode:
+		fig = plt.figure()
+		ax = fig.add_subplot(111)
+		print("idx",idx,N4)
+		# ax.plot(W4to4[:N4*N4*Nvert,idx].reshape(N4,N4*Nvert)[:,N4//2]/np.max(W4to4[:N4*N4*Nvert,idx].reshape(N4,N4*Nvert)[:,N4//2]),"-r",label="EtoE")
+		# ax.plot(W4to4[N4*N4*Nvert:,idx+N4**2*Nvert].reshape(N4,N4*Nvert)[:,N4//2]/np.min(W4to4[N4*N4*Nvert:,idx+N4**2*Nvert].reshape(N4,N4*Nvert)[:,N4//2]),"-c",label="ItoE")
+		# ax.plot(W4to4[:N4*N4*Nvert,idx].reshape(N4,N4*Nvert)[:,N4//2]/np.max(W4to4[:N4*N4*Nvert,idx].reshape(N4,N4*Nvert)[:,N4//2]),"-m",label="EtoI")
+		# ax.plot(W4to4[N4*N4*Nvert:,idx+N4**2*Nvert].reshape(N4,N4*Nvert)[:,N4//2]/np.min(W4to4[N4*N4*Nvert:,idx+N4**2*Nvert].reshape(N4,N4*Nvert)[:,N4//2]),"-b",label="ItoI")
+		ax.plot(W4to4[:N4*N4*Nvert,idx].reshape(N4,N4*Nvert)[:,N4//2]/np.nanmax(W4to4[:N4*N4*Nvert,idx].reshape(N4,N4*Nvert)[:,N4//2]),"-r",label="EtoE")
+		ax.plot(W4to4[N4*N4*Nvert:,idx].reshape(N4,N4*Nvert)[:,N4//2]/np.nanmax(W4to4[N4*N4*Nvert:,idx].reshape(N4,N4*Nvert)[:,N4//2]),"-m",label="EtoI")
+		ax.plot(W4to4[:N4*N4*Nvert,idx+N4**2*Nvert].reshape(N4,N4*Nvert)[:,N4//2]/np.min(W4to4[:N4*N4*Nvert,idx+N4**2*Nvert].reshape(N4,N4*Nvert)[:,N4//2]),"-c",label="ItoE")
+		ax.plot(W4to4[N4*N4*Nvert:,idx+N4**2*Nvert].reshape(N4,N4*Nvert)[:,N4//2]/np.min(W4to4[N4*N4*Nvert:,idx+N4**2*Nvert].reshape(N4,N4*Nvert)[:,N4//2]),"-b",label="ItoI")
+		ax.legend(loc="best")
+		fig_list.append(fig)
+		plt.close(fig)
 
 	## cluster one of the four connectivity matrices and apply clustering to 
 	## remaining three
@@ -456,7 +476,7 @@ def plot_LGN_input_corr(lgn,**kwargs):
 							 cmap="RdBu_r",vmin=-0.75,vmax=0.75)
 			else:
 				diff = (0.5*cc_avg[0,0]+0.5*cc_avg[1,1]-cc_avg[0,1]).reshape(N,N)
-				im=ax.imshow(diff,interpolation="nearest",cmap="RdBu_r",vmin=-0.75,vmax=0.75)
+				im=ax.imshow(diff,interpolation="nearest",cmap="RdBu_r")#,vmin=0,vmax=1)
 			plt.colorbar(im,ax=ax)
 	fig_list.append(fig)
 
@@ -606,4 +626,51 @@ def grid_plot_twolayer(data,fig=None,ncol=None,nrow=None,vmin=None,vmax=None):
 			ims.append(im)
 
 	return fig,axes,ims
+
+def plot_dev_connectivity(conn_t,plastic=False):
+
+	fig_list = []
+	fig = plt.figure(figsize=(6,5))
+	ax = fig.add_subplot(111)
+	ax.set_title("Connectivity Matrix")
+	im=ax.imshow(conn_t[-1,:,:],interpolation="nearest",cmap="binary")
+	plt.colorbar(im,ax=ax)
+	fig_list.append(fig)
+
+	if plastic:
+		timesteps,N,N = conn_t.shape
+		N4,N23 = int(np.sqrt(N//2)),int(np.sqrt(N//2))
+		print("N4",N4,N23,conn_t.shape)
+		fig = plt.figure(figsize=(18,5))
+		ax = fig.add_subplot(131)
+		ax.plot(conn_t[:,N//2,:],'-')
+		ax.set_ylabel("Indiv connectivity weights")
+		ax = fig.add_subplot(132)
+		ax.plot(conn_t[:,N//4,:],'-')
+		ax.set_xlabel("Timesteps (saved)")
+		ax = fig.add_subplot(133)
+		ax.plot(conn_t[:,0,:],'-')
+		fig_list.append(fig)
+
+		ncol,nrow = 3,2
+		fig = plt.figure(figsize=(6*ncol,5*nrow))
+		timepoints = 1,timesteps//2,timesteps-1
+		for i,it in enumerate(timepoints):
+			conn_EtoE,_,_,_ = analysis_tools.get_RF_form(conn_t[it,:N//2,:N//2],N23,\
+												N4,int(N23*0.4+4),calc_PF=False,\
+												Nvert=1,mode="other")
+			ax = fig.add_subplot(nrow,ncol,i+1)
+			ax.set_title("t={}".format(it))
+			im=ax.imshow(conn_EtoE,interpolation="nearest",cmap="binary")
+			plt.colorbar(im,ax=ax)
+			conn_EtoI,_,_,_ = analysis_tools.get_RF_form(conn_t[it,N//2:,:N//2],N23,\
+													N4,int(N23*0.4+4),calc_PF=False,\
+													Nvert=1,mode="other")
+			ax = fig.add_subplot(nrow,ncol,i+ncol+1)
+			im=ax.imshow(conn_EtoI,interpolation="nearest",cmap="binary")
+			plt.colorbar(im,ax=ax)
+		fig_list.append(fig)
+
+	return fig_list
+
 

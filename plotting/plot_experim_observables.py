@@ -60,17 +60,6 @@ def plotting_routines(Version,load_external_from=""):
 	inp_params = params["Inp_params"]
 	random_seed = params["random_seed"]
 
-	if not "onoff_corr_factor" in params["Inp_params"].keys():
-		params["Inp_params"].update({"onoff_corr_factor" : 1.})
-	if not "onoff_rel_weight" in params["Inp_params"].keys():
-		params["Inp_params"]["onoff_rel_weight"] = 1.
-	if not "connectivity_type" in params["Wlgn_to4_params"].keys():
-		params["Wlgn_to4_params"]["connectivity_type"] = "E"
-		params["num_lgn_paths"] = 2
-	if not "saving_stepsize" in params.keys():
-		params["saving_stepsize"] = 1
-	if not "multiplicative_normalisation" in params.keys():
-		params["multiplicative_normalisation"] = "x"
 	num_lgn_paths = params["num_lgn_paths"]
 	avg_no_inp = params["Inp_params"]["avg_no_inp"]
 	gamma_lgn = params["gamma_lgn"]
@@ -123,10 +112,10 @@ def plotting_routines(Version,load_external_from=""):
 	if "2pop" in params["W4to4_params"]["Wrec_mode"]:
 		W4 = connectivity.Connectivity_2pop((N4,N4), (N4,N4), (N4,N4), (N4,N4),\
 			 random_seed=random_seed,Nvert=Nvert,full_output=True)
-		W4to4,output_dict = W4.create_matrix_2pop(params["W4to4_params"],\
+		W4to4,output_dict,_ = W4.create_matrix_2pop(params["W4to4_params"],\
 							params["W4to4_params"]["Wrec_mode"])
 	else:
-		W4to4,output_dict = W4.create_matrix(params["W4to4_params"],\
+		W4to4,output_dict,_ = W4.create_matrix(params["W4to4_params"],\
 							 params["W4to4_params"]["Wrec_mode"],r_A=x_I)
 		# if not simulate_activity:
 		# 	W4to4 = np.linalg.inv(np.diagflat(np.ones(N4*N4*Nvert)) - W4to4)
@@ -183,7 +172,7 @@ def plotting_routines(Version,load_external_from=""):
 
 
 		for key,value in sorted(observables.items()):
-			print(key,value.shape)
+			# print(key,value.shape)
 			ncol,nrow = 2,1
 			fig = plt.figure(figsize=(6*ncol,5*nrow))
 			fig.suptitle(key)
@@ -230,7 +219,7 @@ def plotting_routines(Version,load_external_from=""):
 				ax.set_xlabel(key)
 				ax.set_ylabel("Cumulative distrib.")
 			
-			elif key in ("ONOFF ratio","ON/OFF segregation","Envelope width","Orientation_fit",\
+			elif key in ("ONOFF ratio","ONOFF segregation","Envelope width","Orientation_fit",\
 						 "Relative phase","# half cycles","Log aspect ratio"):
 				ncol,nrow = 2,1
 				value2d = value.reshape(N4,N4*Nvert)
@@ -354,9 +343,10 @@ if __name__=="__main__":
 
 	for Version in np.unique(Versions):
 		print("Plotting data from run {}".format(Version))
-		try:
-			plotting_routines(Version,load_external_from=load_external_from)
-		except Exception as e:
-			misc.PrintException()
-			print("Ignoring version {}".format(Version))
-			pass
+		plotting_routines(Version,load_external_from=load_external_from)
+		# try:
+		# 	plotting_routines(Version,load_external_from=load_external_from)
+		# except Exception as e:
+		# 	misc.PrintException()
+		# 	print("Ignoring version {}".format(Version))
+		# 	pass

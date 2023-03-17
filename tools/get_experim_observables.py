@@ -19,8 +19,8 @@ def on_off_ratio(RF,**kwargs):
 			R_off = np.sum(RF[2,k*DA:(k+1)*DA,l*DA:(l+1)*DA]>0)
 			# R_on_max = np.nanmax(RF[1,k*DA:(k+1)*DA,l*DA:(l+1)*DA])
 			# R_off_max = np.nanmax(RF[2,k*DA:(k+1)*DA,l*DA:(l+1)*DA])
-			R_on_mean = np.nanmax(RF[1,k*DA:(k+1)*DA,l*DA:(l+1)*DA])
-			R_off_mean = np.nanmax(RF[2,k*DA:(k+1)*DA,l*DA:(l+1)*DA])
+			R_on_mean = np.nanmean(RF[1,k*DA:(k+1)*DA,l*DA:(l+1)*DA])
+			R_off_mean = np.nanmean(RF[2,k*DA:(k+1)*DA,l*DA:(l+1)*DA])
 			## consider only units that respond to both dark and light stimuli
 			if (R_on>0 and R_off>0):
 				# RF_ratio[k,l] = R_on_max/(R_on_max+R_off_max)
@@ -77,7 +77,6 @@ def off_anchoring(RF,**kwargs):
 	dist_on_minus_off = dist_on_center - dist_off_center
 	## - RF value at center
 	rf_center_value = RF_array[:,DA//2,DA//2]
-
 	return dist_on_center,dist_off_center,dist_on_minus_off,rf_center_value
 
 
@@ -118,11 +117,12 @@ def RF_fitparams(sd,RF,**kwargs):
 
 
 	sd = sd.reshape(N4,N4*Nvert,Nlgn,Nlgn)
-	_,Rn = analysis_tools.get_response(sd,DA,Nvert=Nvert)
+	opm,Rn = analysis_tools.get_response(sd,DA,Nvert=Nvert)
+	sel = np.abs(opm)
+
 	print("RF[0,...]",RF[0,...].size,np.sum(np.isfinite(RF[0,...])))
-	fit_params,fitted_gabor,fit_cost,xmax,ymax = analysis_tools.fit_gabor_to_RF(\
-																RF[0,...],DA=DA,\
-																Nvert=Nvert,N4=N4,Rn=Rn)
+	fit_params,fitted_gabor,fit_cost,xmax,ymax,num_halfcycles =\
+		 analysis_tools.fit_gabor_to_RF(RF[0,...],DA=DA,Nvert=Nvert,N4=N4,Rn=Rn)
 	fit_params = fit_params.reshape(N4**2*Nvert,-1)
 	ncols = fit_params.shape[-1]
 	reasonable_fits = fit_params[:,0]>1.
@@ -130,12 +130,12 @@ def RF_fitparams(sd,RF,**kwargs):
 			  "Log Aspect ratio"]
 
 	gabor_params = np.empty_like(fit_params)*np.nan
-	num_halfcycles = np.nanmean([xmax,ymax])*4/fit_params[:,3]
+	# num_halfcycles = np.nanmean([xmax,ymax])*4/fit_params[:,3]
 	gabor_params[:,:3] = fit_params[:,:3]
-	gabor_params[:,3] = num_halfcycles
+	gabor_params[:,3] = num_halfcycles.flatten()
 	gabor_params[:,4] = -np.log10(fit_params[:,4])
 
-	return gabor_params,fitted_gabor,fit_cost
+	return gabor_params,fitted_gabor,fit_cost,sel
 
 
 
@@ -153,7 +153,7 @@ def compute_experimental_observables(Wlgn_to_4, RF, **kwargs):
 		RF,_,_,_ = analysis_tools.get_RF_form(sf,N4,Nlgn,DA,calc_PF=False,Nvert=Nvert)
 
 	sd = Wlgn_to_4[0,...] - Wlgn_to_4[1,...]
-	gabor_params,fitted_gabor,fit_cost = RF_fitparams(sd,RF,**kwargs)
+	gabor_params,fitted_gabor,fit_cost,sel = RF_fitparams(sd,RF,**kwargs)
 
 	ARF = average_RF(RF,**kwargs)
 
@@ -186,5 +186,6 @@ def compute_experimental_observables(Wlgn_to_4, RF, **kwargs):
 					"ONOFF segregation" : RF_seg,
 					"ONOFF ratio" : RF_ratio,
 					"Average RF" : ARF,
+					"Selectivity" : sel,
 	}
 	return observables

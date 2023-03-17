@@ -108,12 +108,6 @@ def parameter_sweep_layer4(Version,config_dict,**kwargs):
 					"Nret" : tf.constant(Nret, dtype=tf.int32),
 					"Nvert" : tf.constant(Nvert, dtype=tf.int32),
 					
-					# "gamma_4" : tf.constant(config_dict["gamma_4"], dtype=tf.float32),
-					# "gamma_lgn" : tf.constant(config_dict["gamma_lgn"], dtype=tf.float32),
-					# "beta_P" : tf.constant(config_dict["beta_P"], dtype=tf.float32),
-					# "beta_O" : tf.constant(config_dict["beta_O"], dtype=tf.float32),
-					# "tau" : tf.convert_to_tensor(tau, name='tau', dtype=tf.float32),
-
 					"init_weights" : tf.convert_to_tensor(init_weights,dtype=tf.float32),
 					"Wret_to_lgn" : tf.convert_to_tensor(Wret_to_lgn,dtype=tf.float32),
 					"W4to4" : tf.convert_to_tensor(W4to4, dtype=tf.float32),
@@ -121,26 +115,17 @@ def parameter_sweep_layer4(Version,config_dict,**kwargs):
 					"W4to23" : tf.convert_to_tensor(np.array([]), dtype=tf.float32),
 					"W23to4" : tf.convert_to_tensor(np.array([]), dtype=tf.float32),
 					"init_weights_4to23" : None,
-					"arbor4to23" : None,
-					"arbor4to23_full" : None,
-
-					# "c_coeff" : tf.convert_to_tensor(c_coeff,dtype=tf.float32),
-					# "c_vec" : tf.convert_to_tensor(c_vec,dtype=tf.float32),
-
+					
 					"arbor_on" : tf.convert_to_tensor(arbor_on,dtype=tf.float32),
 					"arbor_off" : tf.convert_to_tensor(arbor_off,dtype=tf.float32),
 					"arbor2" : tf.convert_to_tensor(arbor2,dtype=tf.float32),
-					"arbor4to23" : tf.convert_to_tensor(np.array([]),dtype=tf.float32),
-					"arbor4to23_full" : tf.convert_to_tensor(np.array([]),dtype=tf.float32),
+					"arbor4to23" : None,
+					"arbor4to23_full" : None,
 					"arbor4to4" : None,
 					"arbor23to23" : None,
+					"arbor23to23_full" : None,
+					"arbor4to4_full" : None,
 
-					# "pattern_duration" : tf.constant(T_pd,dtype=tf.float32),
-					# "expanse_time" : tf.constant(T_exp,dtype=tf.float32),
-					# "avg_no_inp" : config_dict["Inp_params"]["avg_no_inp"],
-					
-					# "normalisation_mode" : tf.constant(config_dict["normalisation_mode"]),
-					# "Wlim" : tf.constant(config_dict["Wlgn_to4_params"]["Wlim"], dtype=tf.float32),
 					"c_orth" : tf.convert_to_tensor(c_orth,dtype=tf.float32),
 					"s_orth" : tf.convert_to_tensor(s_orth,dtype=tf.float32),
 					"c_orth_4to23" : tf.convert_to_tensor(np.array([]),dtype=tf.float32),
@@ -156,51 +141,47 @@ def parameter_sweep_layer4(Version,config_dict,**kwargs):
 	s = N4*N4*Nlgn*Nlgn*Nvert
 	print("Starting simulation. This might take a while...")
 	print("...")
+
+	
 	sys.stdout.flush()
 	if config_dict["Inp_params"]["simulate_activity"]:
 		if not kwargs["not_saving_temp"]:
 			y0 = tf.concat([Wlgn_to_4.flatten(), l40], axis=0)
 			if config_dict["test_lowDsubset"]:
-				yt,l4t = integrator_tf.odeint_new(dynamics.lowD_GRF_l4,\
+				yt,time_dep_dict = integrator_tf.odeint_new(dynamics.lowD_GRF_l4,\
 											 	y0, t, dt, params_dict, mode="dynamic")
 			else:
-				yt,l4t = integrator_tf.odeint_new(dynamics.dynamics_l4_new,\
+				yt,time_dep_dict = integrator_tf.odeint_new(dynamics.dynamics_l4_new,\
 											 	y0, t, dt, params_dict, mode="dynamic")
 			# yt,l4t = integrator_tf.odeint(dynamics.dynamics_l4,\
 			# 								 y0, t, dt, params_dict, mode="dynamic")
-		
+			l4t = np.array(time_dep_dict["l4t"])[:,:2*N4**2*Nvert]
+
+			print("CHECK SHAOE",yt.shape,l4t.shape)
 			y = yt[-1,:]
 			l4 = l4t[-1,:]
-			print("yt",yt.shape,l4t.shape);sys.stdout.flush()
-			print("yt",yt[-1,:])
+			try:
+				del params_dict["config_dict"]["W4to4_params"]['l4_avg']
+				del params_dict["config_dict"]["W4to4_params"]['theta_4']
+			except:
+				pass
 
-			Wfinal = y[:config_dict["num_lgn_paths"]*s].numpy().reshape(config_dict["num_lgn_paths"],\
-																N4**2*Nvert,Nlgn**2)
-			# lgn_norm = (lgn - np.nanmean(lgn,axis=1)[:,None,:])/np.nanstd(lgn,axis=1)[:,None,:]
-			# l4_norm = (l4t[:,:N4*N4*Nvert] - np.nanmean(l4t[:,:N4*N4*Nvert],axis=1)[:,None]) /\
-			#  			np.nanstd(l4t[:,:N4*N4*Nvert],axis=1)[:,None]
-			# cc_recff = []
-			# for it in range(min([l4t.shape[0],lgn_norm.shape[2]])):
-			# 	cc_recff.append( np.nanmean(l4_norm[it,None,::Nvert] * lgn_norm[:,:,it],axis=1) )
-			# cct = np.array(cc_recff)
 		else:
 			t = t[:-config_dict["Inp_params"]["pattern_duration"]]
 			y0 = tf.concat([Wlgn_to_4.flatten(), l40], axis=0)
 			y = integrator_tf.odeint(dynamics.dynamics_l4_sgl, y0, t, dt, params_dict,\
 										mode="single_stim_update")
 			l4 = y[2*s:]
-			print("y,l4",y.shape,l4.shape);sys.stdout.flush()
 
 	else:
 		y0 = tf.concat([Wlgn_to_4.flatten(), l40], axis=0)
 		if config_dict["test_lowDsubset"]:
-			print("run test_lowDsubset")
-			yt,l4t = integrator_tf.odeint_new(dynamics.lowD_GRF_l4,\
+			yt,time_dep_dict = integrator_tf.odeint_new(dynamics.lowD_GRF_l4,\
 										 	y0, t, dt, params_dict, mode="dynamic")
 		else:
-			yt,l4t = integrator_tf.odeint_new(dynamics.dynamics_l4_new,y0,t,dt,params_dict,\
+			yt,time_dep_dict = integrator_tf.odeint_new(dynamics.dynamics_l4_new,y0,t,dt,params_dict,\
 										 		mode="static")
-		print("yt",yt.shape);sys.stdout.flush()
+		l4t = np.array(time_dep_dict["l4t"])[:,:2*N4**2*Nvert]
 		y = yt[-1,:]
 		l4 = l4t[-1,:]
 	
@@ -254,30 +235,44 @@ def parameter_sweep_layer4(Version,config_dict,**kwargs):
 
 if __name__=="__main__":
 	# import argparse
-	from bettina.modeling.ori_dev_model import config_dict
+	# from bettina.modeling.ori_dev_model import config_dict
 	from bettina.modeling.ori_dev_model.tools import parse_args,update_params_dict
 
 	args_dict = vars(parse_args.args)
 	print("args_dict",args_dict)
 
-	default_dict = config_dict
-	default_dict = update_params_dict.update_params_dict(default_dict,args_dict)
+	if args_dict["load_params_file"] is not None:
+		config_dict = misc.load_external_params(args_dict["load_params_file"])
+	else:
+		config_dict = misc.load_external_params("params_default")
+
+	config_dict = update_params_dict.update_params_dict(config_dict,args_dict)
 
 	if args_dict["V"] is not None:
 		Version = args_dict["V"]
 	else:
 		Version = misc.get_version(data_dir + "layer4/",version=None,readonly=False)
 
+	
+
 	print("Version",Version)
 	print(" ")
-	print("config_dict, Wret_to_lgn_params",default_dict["Wret_to_lgn_params"])
-	print("config_dict, W4to4_params",default_dict["W4to4_params"])
+	print("config_dict, Wret_to_lgn_params",config_dict["Wret_to_lgn_params"])
 
 	print(" ")
-	print("config_dict, Wlgn_to4_params",default_dict["Wlgn_to4_params"])
+	print("config_dict, W4to4_params",config_dict["W4to4_params"])
 	print(" ")
 
-	parameter_sweep_layer4(Version,default_dict,**args_dict)
+	print(" ")
+	print("config_dict, Wlgn_to4_params",config_dict["Wlgn_to4_params"])
+	print(" ")
+
+	print(" ")
+	print("config_dict, Inp_params",config_dict["Inp_params"])
+	print(" ")
+	print('gamma_lgn',config_dict["gamma_lgn"])
+
+	parameter_sweep_layer4(Version,config_dict,**args_dict)
 	print("done")
 
 

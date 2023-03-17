@@ -90,7 +90,7 @@ def plotting_routines(Version,load_external_from=""):
 	## number of input patterns needed
 	print("# of stimuli: {}".format(params["Inp_params"]["Nsur"]));sys.stdout.flush()
 
-	params["W4to4_params"]["sigma_factor"] = 0.25
+	# params["W4to4_params"]["sigma_factor"] = 0.25
 
 	last_timestep = params["runtime"]/dt
 	params.update({
@@ -135,11 +135,13 @@ def plotting_routines(Version,load_external_from=""):
 	if "2pop" in params["W4to4_params"]["Wrec_mode"]:
 		W4 = connectivity.Connectivity_2pop((N4,N4), (N4,N4), (N4,N4), (N4,N4),\
 			 random_seed=random_seed,Nvert=Nvert,full_output=True)
-		W4to4,output_dict = W4.create_matrix_2pop(params["W4to4_params"],\
+		W4to4,output_dict,_ = W4.create_matrix_2pop(params["W4to4_params"],\
 							params["W4to4_params"]["Wrec_mode"])
 	else:
 		W4to4,output_dict = W4.create_matrix(params["W4to4_params"],\
-							params["W4to4_params"]["Wrec_mode"],r_A=x_I)
+							params["W4to4_params"]["Wrec_mode"])#,r_A=x_I)
+
+		output_dict,_ = output_dict
 
 
 
@@ -188,13 +190,11 @@ def plotting_routines(Version,load_external_from=""):
 		
 		deltaW = Wlgn_to_4_t[:-1,...] - Wlgn_to_4_t[1:,...]
 		print("deltaW",deltaW.shape)
-		# deltaW_of = Wlgn_to_4_t[:-1,1,...] - Wlgn_to_4_t[1:,1,...]
 		avg_deltaW_t = np.nanmean(deltaW[500:1000,...],axis=(0))
 		avg_deltaW_xa = np.nanmean(deltaW,axis=(1,2,3))
 		sf = avg_deltaW_t.reshape(num_lgn_paths,N4,N4*Nvert,Nlgn,Nlgn)
 		for k,DA in enumerate([DA_on,DA_off]):
 			delta_RF = np.zeros((DA*N4,DA*N4*Nvert))
-			print("k",k,DA,delta_RF.shape)
 			for i in range(N4*Nvert):
 				for j in range(N4):
 					son_ij = np.roll(np.roll(sf[k,j,i,:,:],shift=Nlgn//2-int(1.*j/N4 * Nlgn),\
@@ -216,9 +216,7 @@ def plotting_routines(Version,load_external_from=""):
 		pp.savefig(fig,dpi=300,bbox_inches='tight')
 		plt.close(fig)
 
-
-
-		nrow,ncol = 5,5
+		nrow,ncol = 3,3
 		fig = plt.figure(figsize=(50,50))
 		for irow in range(nrow):
 			for jcol in range(ncol):
@@ -229,6 +227,48 @@ def plotting_routines(Version,load_external_from=""):
 						for i in range(N4*Nvert):
 							for j in range(N4):
 								son_ij = np.roll(np.roll(sf[0,j,i,:,:]-sf[1,j,i,:,:],\
+												shift=Nlgn//2-j,axis=0),shift=Nlgn//2-i,axis=1)
+								delta_RF[j*DA:(j+1)*DA,i*DA:(i+1)*DA] = \
+								 son_ij[Nlgn//2-DA//2:Nlgn//2+DA//2+DA%2, Nlgn//2-DA//2:Nlgn//2+DA//2+DA%2]
+						ax = fig.add_subplot(nrow,ncol,jcol+irow*ncol+1)
+						ax.set_title("t={}".format(jcol+irow*ncol))
+						im=ax.imshow(delta_RF,interpolation="nearest",cmap="RdBu_r")
+						plt.colorbar(im,ax=ax)
+		pp.savefig(fig,dpi=300,bbox_inches='tight')
+		plt.close(fig)
+
+		nrow,ncol = 3,3
+		fig = plt.figure(figsize=(50,50))
+		for irow in range(nrow):
+			for jcol in range(ncol):
+					if deltaW.shape[0]>(jcol+irow*ncol):
+						sf =  Wlgn_to_4_t[jcol+irow*ncol,:,:,:].reshape(num_lgn_paths,N4,N4*Nvert,Nlgn,Nlgn)
+						DA = max([DA_on,DA_off])
+						delta_RF = np.zeros((DA*N4,DA*N4*Nvert))
+						for i in range(N4*Nvert):
+							for j in range(N4):
+								son_ij = np.roll(np.roll(sf[0,j,i,:,:],\
+												shift=Nlgn//2-j,axis=0),shift=Nlgn//2-i,axis=1)
+								delta_RF[j*DA:(j+1)*DA,i*DA:(i+1)*DA] = \
+								 son_ij[Nlgn//2-DA//2:Nlgn//2+DA//2+DA%2, Nlgn//2-DA//2:Nlgn//2+DA//2+DA%2]
+						ax = fig.add_subplot(nrow,ncol,jcol+irow*ncol+1)
+						ax.set_title("t={}".format(jcol+irow*ncol))
+						im=ax.imshow(delta_RF,interpolation="nearest",cmap="RdBu_r")
+						plt.colorbar(im,ax=ax)
+		pp.savefig(fig,dpi=300,bbox_inches='tight')
+		plt.close(fig)
+
+		nrow,ncol = 3,3
+		fig = plt.figure(figsize=(50,50))
+		for irow in range(nrow):
+			for jcol in range(ncol):
+					if deltaW.shape[0]>(jcol+irow*ncol):
+						sf =  Wlgn_to_4_t[jcol+irow*ncol,:,:,:].reshape(num_lgn_paths,N4,N4*Nvert,Nlgn,Nlgn)
+						DA = max([DA_on,DA_off])
+						delta_RF = np.zeros((DA*N4,DA*N4*Nvert))
+						for i in range(N4*Nvert):
+							for j in range(N4):
+								son_ij = np.roll(np.roll(sf[1,j,i,:,:],\
 												shift=Nlgn//2-j,axis=0),shift=Nlgn//2-i,axis=1)
 								delta_RF[j*DA:(j+1)*DA,i*DA:(i+1)*DA] = \
 								 son_ij[Nlgn//2-DA//2:Nlgn//2+DA//2+DA%2, Nlgn//2-DA//2:Nlgn//2+DA//2+DA%2]
@@ -538,7 +578,6 @@ def plotting_routines(Version,load_external_from=""):
 		
 		pp.savefig(fig,dpi=300,bbox_inches='tight')
 		plt.close(fig)
-
 		
 		ncol,nrow = 4,1
 		fig = plt.figure(figsize=(ncol*6,nrow*5))
@@ -561,6 +600,17 @@ def plotting_routines(Version,load_external_from=""):
 		ax.set_title("SD OFF")
 		im=ax.imshow(np.nanstd(lgn[1,:,:],axis=1).reshape(Nlgn,Nlgn),\
 					interpolation="nearest",cmap="binary")
+		plt.colorbar(im,ax=ax)
+		pp.savefig(fig,dpi=300,bbox_inches='tight')
+		plt.close(fig)
+
+		ncol,nrow = 2,1
+		fig = plt.figure(figsize=(ncol*6,nrow*5))
+		ax = fig.add_subplot(nrow,ncol,1)
+		im=ax.imshow(inp_on[0,:,:] + inp_of[0,:,:],interpolation="nearest",cmap="binary")
+		plt.colorbar(im,ax=ax)
+		ax = fig.add_subplot(nrow,ncol,2)
+		im=ax.imshow(inp_on[-1,:,:] + inp_of[-1,:,:],interpolation="nearest",cmap="binary")
 		plt.colorbar(im,ax=ax)
 		pp.savefig(fig,dpi=300,bbox_inches='tight')
 		plt.close(fig)
@@ -839,7 +889,7 @@ def plotting_routines(Version,load_external_from=""):
 		pp.close()
 
 
-	if not os.path.exists(image_dir_param + "lgn_input.pdf"):
+	if True:#not os.path.exists(image_dir_param + "lgn_input.pdf"):
 		pp = PdfPages(image_dir_param + "lgn_input.pdf")
 		fig_list = plot_functions.plot_LGN_input_corr(lgn,Nlgn=Nlgn)
 		for fig in fig_list:
@@ -921,7 +971,8 @@ def plotting_routines(Version,load_external_from=""):
 				ax1 = fig.add_subplot(nrow,ncol,1+k)
 				ax1.set_title("t={}".format(kt))
 				ax2 = fig.add_subplot(nrow,ncol,1+k+ncol)
-				im=ax1.imshow(kRF[0,:,:],interpolation="nearest",cmap="RdBu_r")
+				m = np.nanmax(kRF[0,:,:])
+				im=ax1.imshow(kRF[0,:,:],interpolation="nearest",cmap="RdBu_r",vmin=-m,vmax=m)
 				plt.colorbar(im,ax=ax1)
 				im=ax2.imshow(kPF[0,:,:],interpolation="nearest",cmap="RdBu_r")
 				plt.colorbar(im,ax=ax2)
@@ -1091,10 +1142,6 @@ def plotting_routines(Version,load_external_from=""):
 
 			# 	on_dom = lgn_sd[0,:,:] > otsu_thr
 			# 	of_dom = lgn_sd[1,:,:] > otsu_thr
-
-
-
-
 
 
 			## quantify size of ON/OFF subfield (simple vs single sign RFs)
@@ -1281,7 +1328,7 @@ def plotting_routines(Version,load_external_from=""):
 			# pref_phase = pref_phase.reshape(N4*N4*Nvert)
 			# pairwise_phase_diff = analysis_tools.difference_in_phase(pref_phase,pref_phase)
 			# W4 = connectivity.Connectivity((N4,N4),(N4,N4),random_seed=random_seed,Nvert=Nvert)
-			# pairwise_distance = W4.create_matrix(params["W4to4_params"],"linear")
+			# pairwise_distance,_ = W4.create_matrix(params["W4to4_params"],"linear")
 			# pairs_within_rAdistance = pairwise_distance < (rA_on * 1./N4)
 			# nearest_neighbours = pairwise_distance <= (np.sqrt(2.) * 1./N4)
 			# lower_tri = np.tri(N4**2*Nvert,N4**2*Nvert,k=-1,dtype=bool)
@@ -1436,7 +1483,7 @@ def plotting_routines(Version,load_external_from=""):
 			# 	pref_ori = pref_ori.reshape(N4*N4)
 
 			# 	W4 = connectivity.Connectivity((N4,N4),(N4,N4),random_seed=random_seed)
-			# 	pairwise_distance = W4.create_matrix(params["W4to4_params"],"linear")
+			# 	pairwise_distance,_ = W4.create_matrix(params["W4to4_params"],"linear")
 			# 	pairs_within_rAdistance = pairwise_distance < (rA_on * 1./N4)
 			# 	pairs_within_rAdistance[np.tri(N4**2,N4**2,k=0,dtype=bool)] = 0
 			# 	pairwise_phase_diff = analysis_tools.difference_in_phase(pref_phase,pref_phase)
@@ -1562,21 +1609,6 @@ def plotting_routines(Version,load_external_from=""):
 		plt.close(fig)
 		pp.close()
 
-
-
-
-
-	# results_dict = {
-	# 				"pref_phase"	:	pref_phase,
-	# 				"pref_ori"		:	pref_ori,
-	# 				"l4"			:	l4_t[-2,:],
-	# 				"Wlgn_to_4"		:	Wlgn_to_4,
-	# 				"RF"			:	RF,
-	# 				"sel"			:	sel,
-	# 				}
-	# cluster_name = "local" if load_external_from=="" else load_external_from
-	# misc.write_to_hdf5(results_dict,cluster_name,Version,data_dir+"layer4/results.hdf5")
-
 	try:
 		del yt
 		del Wlgn_to_4
@@ -1622,7 +1654,7 @@ if __name__=="__main__":
 				assert version_list[1]!="",\
 				 "Error: start and end value expected for list of indices"
 				Versions = np.concatenate([Versions,np.arange(int(version_list[0]),\
-					int(version_list[1])+1,1)])
+							int(version_list[1])+1,1)])
 			elif "-" in item:
 				version_list = item.split("-")
 				assert version_list[0]!="",\
@@ -1630,7 +1662,7 @@ if __name__=="__main__":
 				assert version_list[1]!="",\
 				 "Error: start and end value expected for list of indices"
 				Versions = np.concatenate([Versions,np.arange(int(version_list[0]),\
-					int(version_list[1])+1,1)])
+							int(version_list[1])+1,1)])
 			else:
 				assert isinstance(int(item),int), "Error: int value expected for index"
 				Versions = np.concatenate([Versions,np.array([int(item)])])
@@ -1639,9 +1671,12 @@ if __name__=="__main__":
 
 	for Version in np.unique(Versions):
 		print("Plotting data from run {}".format(Version))
-		try:
-			plotting_routines(Version,load_external_from=load_external_from)
-		except Exception as e:
-			misc.PrintException()
-			print("Ignoring version {}".format(Version))
-			pass
+		plotting_routines(Version,load_external_from=load_external_from)
+		# try:
+		# 	plotting_routines(Version,load_external_from=load_external_from)
+		# except Exception as e:
+		# 	misc.PrintException()
+		# 	print("Ignoring version {}".format(Version))
+		# 	pass
+
+	print("end")

@@ -1,8 +1,9 @@
 import numpy as np
+from bettina.modeling.ori_dev_model.tools import misc
 
 
 def update_params_dict(orig_dict,updated_params_dict):
-	if updated_params_dict["nonlinearity"]=="powerlaw":
+	if updated_params_dict["nonlinearity_l4"]=="powerlaw":
 		## change to different default parameters for powerlaw nonlinearity
 		orig_dict["tau"] = 0.2
 		orig_dict["gamma_lgn"] = 0.05
@@ -15,7 +16,7 @@ def update_params_dict(orig_dict,updated_params_dict):
 		# orig_dict["W4to4_params"]["aEI"] = 0.023
 		# orig_dict["W4to4_params"]["aII"] = 0.018
 		orig_dict["W4to4_params"]["max_ew"] = 0.013
-		orig_dict["beta_P"] = 0.0005#0.01
+		orig_dict["W4to4_params"]["beta_P"] = 0.0005#0.01
 		orig_dict["W4to4_params"]["sigma_EE"] = 0.1
 		orig_dict["W4to4_params"]["sigma_IE"] = 0.1
 		orig_dict["W4to4_params"]["sigma_EI"] = 0.07
@@ -49,6 +50,8 @@ def update_params_dict(orig_dict,updated_params_dict):
 					orig_dict[key] = updated_params_dict[key][0]
 				elif key in orig_dict["Inp_params"]:
 					orig_dict["Inp_params"][key] = updated_params_dict[key][0]
+				elif key in orig_dict["Wlgn_to4_params"]:
+					orig_dict["Wlgn_to4_params"][key] = updated_params_dict[key][0]
 
 	## arbor variations
 	if updated_params_dict["arbor_profile"] is not None:
@@ -111,11 +114,14 @@ def update_params_dict(orig_dict,updated_params_dict):
 
 	## update config_dict with given arguments
 	for key in updated_params_dict.keys():
+
 		if updated_params_dict[key] is not None:
+
 			if key=="rC":
 				orig_dict["Wret_to_lgn_params"]["sigma"] = updated_params_dict[key] * r_A_on
 				orig_dict["Wret_to_lgn_params"]["sigma1"] = updated_params_dict[key] * r_A_on
 				orig_dict["Wret_to_lgn_params"]["sigma2"] = updated_params_dict[key] * r_A_on * 2.5
+		
 			elif key=="lgn_corr_het":
 				orig_dict["Wret_to_lgn_params"]["heterogeneity_type"] = updated_params_dict[key]
 
@@ -135,6 +141,7 @@ def update_params_dict(orig_dict,updated_params_dict):
 				orig_dict["W4to4_params"]["max_ew"] = updated_params_dict[key]
 			
 			elif key not in developing_params:
+
 				if key in orig_dict:
 					orig_dict[key] = updated_params_dict[key]
 				elif key in orig_dict["Wlgn_to4_params"]:
@@ -143,6 +150,7 @@ def update_params_dict(orig_dict,updated_params_dict):
 					orig_dict["Inp_params"][key] = updated_params_dict[key]
 				elif key in orig_dict["W4to4_params"]:
 					orig_dict["W4to4_params"][key] = updated_params_dict[key]
+
 		else:
 			# print("{} not found in original dictionary".format(key))
 			pass
@@ -157,7 +165,6 @@ def update_arbor_params(old_dict):
 	updates params_dict from versions where arbor is identical between on and off lgn units
 	"""
 	old_keys = sorted(old_dict.keys())
-	print("old_keys",old_keys)
 	new_dict = old_dict
 	new_keys = ["r_A_on","r_A_off","arbor_profile_on","arbor_profile_off","ampl_on","ampl_off"]
 	for new_key in ["r_A_on","r_A_off"]:
@@ -188,6 +195,102 @@ def update_params(params_dict):
 		params_dict["W4to23_params"]["arbor_profile"] = "gaussian"
 		params_dict["W4to23_params"]["s_noise"] = 0.2
 
+
+	if "mult_norm" not in params_dict["Wlgn_to4_params"]:
+		params_dict["Wlgn_to4_params"]["mult_norm"] = "x"
+	if "mult_norm" not in params_dict["W4to4_params"]:
+		params_dict["W4to4_params"]["mult_norm"] = "None"
+	if "mult_norm" not in params_dict["W23_params"]:
+		params_dict["W23_params"]["mult_norm"] = "None"
+	if "mult_norm" not in params_dict["W4to23_params"]:
+		params_dict["W4to23_params"]["mult_norm"] = "None"
+	if "mult_norm" not in params_dict["W23to4_params"]:
+		params_dict["W23to4_params"]["mult_norm"] = "None"
+
+	if "beta_P" not in params_dict["Wlgn_to4_params"]:
+		params_dict["Wlgn_to4_params"]["beta_P"] = 0.005
+	if "learning_rate" not in params_dict["Wlgn_to4_params"]:
+		params_dict["Wlgn_to4_params"]["learning_rate"] = 0.5
+	if "plasticity_rule" not in params_dict["Wlgn_to4_params"]:
+		params_dict["Wlgn_to4_params"]["plasticity_rule"] = "activity_based"
+	if "constraint_mode" not in params_dict["Wlgn_to4_params"]:
+		params_dict["Wlgn_to4_params"]["constraint_mode"] = "xalpha_approx"
+
+	if "nu_4" not in params_dict["W4to4_params"]:
+		params_dict["W4to4_params"]["nu_4"] = 3.
+	if "beta_P" not in params_dict["W4to4_params"]:
+		params_dict["W4to4_params"]["beta_P"] = 0.0005
+	if "learning_rate" not in params_dict["W4to4_params"]:
+		params_dict["W4to4_params"]["learning_rate"] = 0.5
+	if "Wlim" not in params_dict["W4to4_params"]:
+		params_dict["W4to4_params"]["Wlim"] = 12
+	if "plasticity_rule" not in params_dict["W4to4_params"]:
+		params_dict["W4to4_params"]["plasticity_rule"] = "None"
+	if "constraint_mode" not in params_dict["W4to4_params"]:
+		params_dict["W4to4_params"]["constraint_mode"] = "None"
+	if "firing_threshold" not in params_dict["W4to4_params"]:
+		params_dict["W4to4_params"]["firing_threshold"] = "adaptive"
+	if "theta_4" not in params_dict["W4to4_params"]:
+		params_dict["W4to4_params"]["theta_4"] = 0.9
+	if "l4_avg" not in params_dict["W4to4_params"]:
+		params_dict["W4to4_params"]["l4_avg"] = 0.0
+	if "rA_E" not in params_dict["W4to4_params"]:
+		params_dict["W4to4_params"]["rA_E"] = 0.3
+	if "rA_I" not in params_dict["W4to4_params"]:
+		params_dict["W4to4_params"]["rA_I"] = 0.3
+		
+	if "nu_23" not in params_dict["W23_params"]:
+		params_dict["W23_params"]["nu_23"] = 1.
+	if "beta_P" not in params_dict["W23_params"]:
+		params_dict["W23_params"]["beta_P"] = 0.0005
+	if "Wlim" not in params_dict["W23_params"]:
+		params_dict["W23_params"]["Wlim"] = 12.
+	if "learning_rate" not in params_dict["W23_params"]:
+		params_dict["W23_params"]["learning_rate"] = 0.2
+	if "plasticity_rule" not in params_dict["W23_params"]:
+		params_dict["W23_params"]["plasticity_rule"] = "None"
+	if "constraint_mode" not in params_dict["W23_params"]:
+		params_dict["W23_params"]["constraint_mode"] = "None"
+	if "rA_E" not in params_dict["W23_params"]:
+		params_dict["W23_params"]["rA_E"] = 0.3
+	if "rA_I" not in params_dict["W23_params"]:
+		params_dict["W23_params"]["rA_I"] = 0.3
+
+	if "nu_4" not in params_dict["W4to23_params"]:
+		params_dict["W4to23_params"]["nu_4"] = 1.
+	if "beta_P" not in params_dict["W4to23_params"]:
+		params_dict["W4to23_params"]["beta_P"] = 0.1
+	if "Wlim" not in params_dict["W4to23_params"]:
+		params_dict["W4to23_params"]["Wlim"] = 12.
+	if "learning_rate" not in params_dict["W4to23_params"]:
+		params_dict["W4to23_params"]["learning_rate"] = 0.2
+	if "plasticity_rule" not in params_dict["W4to23_params"]:
+		params_dict["W4to23_params"]["plasticity_rule"] = "None"
+	if "constraint_mode" not in params_dict["W4to23_params"]:
+		params_dict["W4to23_params"]["constraint_mode"] = "None"
+	if "rA_E" not in params_dict["W4to23_params"]:
+		params_dict["W4to23_params"]["rA_E"] = 0.3
+	if "rA_I" not in params_dict["W4to23_params"]:
+		params_dict["W4to23_params"]["rA_I"] = 0.3
+
+	if "nu_23" not in params_dict["W23_params"]:
+		params_dict["W23_params"]["nu_23"] = 1.
+	if "beta_P" not in params_dict["W23_params"]:
+		params_dict["W23_params"]["beta_P"] = 0.1
+	if "Wlim" not in params_dict["W23_params"]:
+		params_dict["W23_params"]["Wlim"] = 12.
+	if "learning_rate" not in params_dict["W23_params"]:
+		params_dict["W23_params"]["learning_rate"] = 0.2
+	if "plasticity_rule" not in params_dict["W23_params"]:
+		params_dict["W23_params"]["plasticity_rule"] = "None"
+	if "constraint_mode" not in params_dict["W23_params"]:
+		params_dict["W23_params"]["constraint_mode"] = "None"
+
+
+	if not "saving_stepsize" in params_dict.keys():
+		params_dict["saving_stepsize"] = 1
+	if not "multiplicative_normalisation" in params_dict.keys():
+		params_dict["multiplicative_normalisation"] = "x"
 		
 	if not "onoff_corr_factor" in params_dict["Inp_params"].keys():
 		params_dict["Inp_params"].update({"onoff_corr_factor" : 1.})
@@ -202,7 +305,6 @@ def update_params(params_dict):
 	if "simulate_activity" not in params_dict["Inp_params"].keys():
 		params_dict["Inp_params"]["simulate_activity"] = True
 
-	print(" params_dict[Inp_params].keys()", params_dict["Inp_params"])
 	## added sept 14, 2021 to implement off dominance in lgn
 	if "off_bias_strength" not in params_dict["Inp_params"].keys():
 		params_dict["Inp_params"]["off_bias_strength"] = 0.0

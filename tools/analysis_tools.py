@@ -251,7 +251,7 @@ def gabor(sigma, theta, Lambda, psi, gamma, size):
 	xmin = -xmax
 	ymin = -ymax
 	(y, x) = np.meshgrid(np.linspace(ymin, ymax + 1, size[0]),\
-	 		 np.linspace(xmin, xmax + 1, size[1]))
+	 					 np.linspace(xmin, xmax + 1, size[1]))
 	# Rotation
 	x_theta = x * np.cos(theta) - y * np.sin(theta)
 	y_theta = x * np.sin(theta) + y * np.cos(theta)
@@ -300,13 +300,13 @@ def get_response(sd,DA,Nvert=1):
 	h,w = sdfft.shape[2:]
 
 	## bin orientation in fourier space
-	kx,ky = np.meshgrid(np.arange(-w/2.,w/2.),np.arange(-h/2+1,h/2+1)[::-1])
+	kx,ky = np.meshgrid(np.arange(-w/2.,w/2.),np.arange(-h/2.+1,h/2.+1)[::-1])
 	angles = np.arctan2(ky,kx)*180/np.pi + (np.arctan2(ky,kx)<0)*360
 	frequency = np.sqrt((kx/w)**2 + (ky/h)**2).flatten()
 	angle_disc = np.arange(0,180,delta_bins)
 	ori_bins = np.searchsorted(angle_disc,angles,side='right')
 
-	half = h//2 + (h+1)%2	## center of FT is not in center of array when array size is even
+	half = h//2 + h%2
 	sdfft_long = sdfft[:,:,:half,:].reshape(N4,N4*Nvert,-1)
 	ori_bins = ori_bins[:half,:].flatten()
 
@@ -434,6 +434,11 @@ def get_center_of_mass_subfields(RF_array,**kwargs):
 		RF_array = RF_array.reshape(-1,h,w)
 	## normalise max value to 1 such that contours can be drawn at same height for each crt unit
 	RF_array = RF_array/np.nanmax(np.abs(RF_array),axis=(1,2))[:,None,None]
+	RF_array_ON = np.copy(RF_array)
+	RF_array_ON[RF_array_ON<0] = 0.0
+	RF_array_OFF = np.copy(RF_array)
+	RF_array_OFF[RF_array_OFF>0] = 0.0
+
 	nlocs = RF_array.shape[0]
 	cntr_lvl = 0.1
 	centroids = np.empty((nlocs,2,2))*np.nan
@@ -443,21 +448,20 @@ def get_center_of_mass_subfields(RF_array,**kwargs):
 		if len(c_on)>0:
 			len_c_on = [len(item) for item in c_on]
 			on_id = np.argsort(len_c_on)[::-1]
-			longest_on_id = on_id[0]
-			max_val_id = longest_on_id
+			max_val_id = on_id[0]
 			max_val = 0
 			for iid in on_id:
 				mask_on_field = measure.grid_points_in_poly((h,w),c_on[iid])
 				if np.sum(mask_on_field)>0:
-					mv = np.nanmax(RF_array[i,mask_on_field])>max_val
+					mv = np.nanmax(RF_array_ON[i,mask_on_field])>max_val
 					if mv>max_val:
 						max_val = mv
 						max_val_id = iid
 			mask_on_field = measure.grid_points_in_poly((h,w),c_on[max_val_id])
 			idx_on_field_y,idx_on_field_x = np.where(mask_on_field)
-			M00 = np.sum(RF_array[i,mask_on_field])*1.
-			M10 = np.sum(RF_array[i,mask_on_field]*idx_on_field_x)
-			M01 = np.sum(RF_array[i,mask_on_field]*idx_on_field_y)
+			M00 = np.sum(RF_array_ON[i,mask_on_field])*1.
+			M10 = np.sum(RF_array_ON[i,mask_on_field]*idx_on_field_x)
+			M01 = np.sum(RF_array_ON[i,mask_on_field]*idx_on_field_y)
 			centroids[i,:,0] = np.array([M10/M00, M01/M00])
 		if len(c_off)>0:
 			len_c_off = [len(item) for item in c_off]
@@ -468,15 +472,15 @@ def get_center_of_mass_subfields(RF_array,**kwargs):
 			for iid in off_id:
 				mask_off_field = measure.grid_points_in_poly((h,w),c_off[iid])
 				if np.sum(mask_off_field)>0:
-					mv = np.nanmin(RF_array[i,mask_off_field])
+					mv = np.nanmin(RF_array_OFF[i,mask_off_field])
 					if mv<min_val:
 						min_val = mv
 						min_val_id = iid
 			mask_off_field = measure.grid_points_in_poly((h,w),c_off[min_val_id])
 			idx_off_field_y,idx_off_field_x = np.where(mask_off_field)
-			M00 = np.sum(RF_array[i,mask_off_field])*1.
-			M10 = np.sum(RF_array[i,mask_off_field]*idx_off_field_x)
-			M01 = np.sum(RF_array[i,mask_off_field]*idx_off_field_y)
+			M00 = np.sum(RF_array_OFF[i,mask_off_field])*1.
+			M10 = np.sum(RF_array_OFF[i,mask_off_field]*idx_off_field_x)
+			M01 = np.sum(RF_array_OFF[i,mask_off_field]*idx_off_field_y)
 			centroids[i,:,1] = np.array([M10/M00, M01/M00])
 	return centroids
 
@@ -521,7 +525,8 @@ def fit_gabor_to_RF(RFsd,**kwargs):
 
 	fit_params = np.empty((N4,N4*Nvert,len(x0)))*np.nan
 	fitted_gabor = np.empty((2,N4*DAnew,N4*Nvert*DAnew))*np.nan
-	fit_cost = np.empty((N4*DAnew,N4*Nvert*DAnew))*np.nan
+	fit_cost = np.empty((N4,N4*Nvert))*np.nan
+	num_half_cycles = np.empty((N4,N4*Nvert))*np.nan
 	for i in range(N4):
 		for j in range(N4*Nvert):
 			tck = interpolate.bisplrep(xold,yold,RFsd[i*DA:(i+1)*DA,j*DA:(j+1)*DA],s=0.1)
@@ -558,7 +563,8 @@ def fit_gabor_to_RF(RFsd,**kwargs):
 			if opt_res.success:
 				fit_params[i,j,:] = fitp
 			fit_cost[i,j] = opt_res.cost
-	return fit_params,fitted_gabor,fit_cost,xmax,ymax
+			num_half_cycles[i,j] = 1./fitp[3]*8*fitp[0]
+	return fit_params,fitted_gabor,fit_cost,xmax,ymax,num_half_cycles
 
 
 def gaussian2d(sigma,x,y):
@@ -631,7 +637,7 @@ def calc_dimension(array, inp='covariance',output=0):
 if __name__=="__main__":
 	import matplotlib.pyplot as plt
 	
-	input_size = (25,25)
+	input_size = (50,50)
 	phases = np.linspace(0,1,10)
 	spat_freq = np.array([np.sqrt(0.5* 1./0.2)])
 	orientations = np.linspace(0,np.pi,8)
@@ -649,17 +655,20 @@ if __name__=="__main__":
 	# test gabor
 	pref_ori = 0
 	pref_freq = 4.
-	gabor = gabor(sigma=2.,
+	x,y = np.meshgrid(np.linspace(-0.5,0.5,50),np.linspace(-0.5,0.5,50))
+	gabor = gabor_fit(sigma=.11,
 				 theta=(90-pref_ori)/180*np.pi,
-				 Lambda=2,
 				 psi=0/180*np.pi, 
-				 gamma=4., 
-				 size=(25,25))
+				 Lambda=0.3,
+				 gamma=.5, 
+				 x=x,y=y)
 	print("gabor",gabor.shape)
 	fig = plt.figure()
 	ax = fig.add_subplot(111)
-	im=ax.imshow(gabor,interpolation="nearest",cmap="binary")
+	im=ax.imshow(gabor,interpolation="nearest",cmap="RdBu_r",vmin=-1.,vmax=1.)
 	plt.colorbar(im,ax=ax)
+	plt.savefig("/home/bettina/physics/columbia/conference/cosyne2022/image/tmp/logaspectratio03.pdf",\
+				bbox_inches="tight")
 	plt.show()
 	exit()
 

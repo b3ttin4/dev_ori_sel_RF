@@ -29,15 +29,15 @@ if __name__=="__main__":
 	from bettina.modeling.ori_dev_model.tools import analysis_tools,misc,update_params_dict
 
 	## set up system
-	RF_mode = "initialize"#"load_from_external"#"gabor"#"initialize"
+	RF_mode = "load_from_external"#"load_from_external"#"gabor"#"initialize"
 	system_mode = "two_layer" #"two_layer" "one_layer"
 	connectivity_type = "EI"
-	N = 20
-	Version = 9
+	N = 25
+	Version = 13
 	load_location = "habanero"
 
 	T_pd = 1000
-	gamma_ff = 0.1#config_dict["gamma_lgn"]
+	gamma_ff = 0.01#config_dict["gamma_lgn"]
 
 	
 	if RF_mode=="load_from_external":
@@ -78,7 +78,7 @@ if __name__=="__main__":
 		pdf_path = image_dir + "grating_responses/v{}_{}/".format(Version,load_location)
 		Nret,Nlgn,N4,N23,Nvert = config_dict["Nret"],config_dict["Nlgn"],config_dict["N4"],\
 								 config_dict["N23"],config_dict["Nvert"]
-		suffix = ""
+		suffix = "_ampl{}".format(gamma_ff)
 
 	else:
 		config_dict["Wlgn_to4_params"].update({"load_from_prev_run" : Version,\
@@ -112,7 +112,7 @@ if __name__=="__main__":
 	dt = config_dict["dt"]
 	t = np.arange(0,T_pd/dt,1).astype(int)
 	config_dict["Inp_params"].update({"input_type" : "moving_grating_online"})
-	config_dict["Inp_params"].update({"input_type" : "white_noise_online"})
+	# config_dict["Inp_params"].update({"input_type" : "white_noise_online"})
 	last_timestep = t[-1]
 	config_dict.update({
 						"last_timestep" : last_timestep,
@@ -170,7 +170,7 @@ if __name__=="__main__":
 		W23to4 = 0
 		W23to23= 0
 	elif system_mode=="two_layer":
-		_,Wlgn_to_4,arbor_on,arbor_off,arbor2,_,W4to4,W23to23,W4to23,arbor4to23,_,W23to4 = n.system
+		_,Wlgn_to_4,arbor_on,arbor_off,arbor2,_,W4to4,arbor4to4,W23to23,arbor23,W4to23,arbor4to23,_,W23to4 = n.system
 		################################# initialization ###############################
 		np.random.seed(config_dict["random_seed"]*113)
 		l40 = np.random.uniform(0,1,2*N4*N4*Nvert)*0.1
@@ -203,7 +203,7 @@ if __name__=="__main__":
 
 	I = np.linalg.inv(np.diagflat(np.ones(N4*N4*2*Nvert)) - W4to4)
 
-	print("Wlgn_to_4",Wlgn_to_4.shape)
+	print("Wlgn_to_4",Wlgn_to_4.shape,lgn.shape)
 	gamma_rec = config_dict["gamma_4"]
 	temporal_duration = 500
 	num_reps = t[-1]/temporal_duration
@@ -218,8 +218,8 @@ if __name__=="__main__":
 			It = [l40*0]
 			for kt in t:
 				lgn_t = int((kt//temporal_duration)%kwargs["Nsur"])#
-				inp = lgn[:2,:,0]
-				# inp = lgn[:,:,i,j,lgn_t]
+				# inp = lgn[:2,:,0]
+				inp = lgn[:,:,i,j,lgn_t]
 				dy,_ = dynamics_system(y,inp,Wlgn_to_4,W4to4,W4to23,W23to23,\
 									 W23to4,gamma_rec,gamma_ff,N4*N4*Nvert,N23**2,tau)
 				y = y + dt*dy

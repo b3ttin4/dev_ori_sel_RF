@@ -29,7 +29,7 @@ from copy import copy
 from bettina.modeling.ori_dev_model import data_dir,image_dir,scan_simulations
 from bettina.modeling.ori_dev_model.tools import misc,analysis_tools
 from bettina.modeling.ori_dev_model.plotting import helper_definitions as hd
-
+from bettina.modeling.ori_dev_model.data import data_lee
 
 #TODO:
 	#- add filter to show only simulations with certain parameter settings:
@@ -140,6 +140,10 @@ class Main_window(QMainWindow):
 		# self.initVERSIONS = [537,538,539,540,541,542,543,544,545,546,547]
 		self.initVERSIONS = np.arange(901,907)
 		self.initVERSIONS = np.arange(884,896)
+		self.initVERSIONS = np.arange(798,807)
+		self.initVERSIONS = np.arange(1007,1022)
+		self.initVERSIONS = np.arange(1022,1027)
+		# self.initVERSIONS = np.concatenate([np.arange(695,700),np.arange(798,807)])
 		self.varied_params = np.array(['Wrec',"Nvert"])
 		self.text_to_key = {'L4 rec. conn. scheme' 		: 	'Wrec',
 							"# vertical units"			:	'Nvert',
@@ -303,11 +307,6 @@ class Main_window(QMainWindow):
 		self.on_draw()
 
 	def combobox_changed(self):
-		# text = self.combobox.currentText()
-		# if text in hd.summary_plot_measures:
-		# 	self.rbtn_sum.setChecked(True)
-		# elif text in hd.individual_plot_measures:
-		# 	self.rbtn_ind.setChecked(True)
 		self.on_draw()
 
 	def create_status_bar(self):
@@ -447,6 +446,7 @@ class Main_window(QMainWindow):
 		# 					v=VERSION),"rb"))
 
 		observables.update({"L4" : l4, "Wlgn_to_4" : Wlgn_to_4})
+		print("observables",observables.keys())
 		return observables,params
 
 	def load_data(self):
@@ -555,10 +555,17 @@ class Main_window(QMainWindow):
 				self.axes[i+self.ncol].set_ylabel("Cumulative distribution")
 				self.axes[i].set_xlabel(xvalue)
 			
-			## Histogram			
+			## Histogram
 			if self.combobox.currentText() in hd.histogram_list:
 				for i,xvalue in enumerate(x_value_list):
 					self.axes[i].set_ylabel("Average")
+				if self.combobox.currentText() in data_lee.exp_data.keys():
+					x = data_lee.exp_data[self.combobox.currentText()][:,0]
+					bin_diff = x[1] - x[0]
+					y = data_lee.exp_data[self.combobox.currentText()][:,1]
+					for j,xvalue in enumerate(x_value_list):
+						self.axes[j+self.ncol].plot(x,y/np.sum(y)/bin_diff,'--',c="k",\
+												label="Exp Data")
 				for loc_id,VERSION in enumerate(self.VERSIONS):
 					measure = self.loaded_data[VERSION][chosen_key]
 					measure = measure[np.isfinite(measure)]
@@ -567,10 +574,11 @@ class Main_window(QMainWindow):
 						self.axes[j].set_ylim(bottom=0)
 						color_id = np.searchsorted(x_uni[j],x_list[j][loc_id],side="left")
 						color = cmaps[j].to_rgba(color_id)
-						n,_,_ = plt.hist(measure,bins=hd.bins_dict[chosen_key])
+						n,_,_ = plt.hist(measure,bins=hd.bins_dict[chosen_key],density=True)
 						self.axes[j+self.ncol].plot(hd.bins_dict[chosen_key][1:],n,'-o',c=color,\
 													label="{}={}".format(xvalue,x_uni[j][color_id]))
 						self.axes[j+self.ncol].legend(loc="best")
+						
 
 			## plot cumulative distribution
 			elif self.combobox.currentText() in hd.cumulative_dist_list:
@@ -583,10 +591,12 @@ class Main_window(QMainWindow):
 						self.axes[j].plot(x_list[j][loc_id],np.nanmean(measure),'o')
 						color_id = np.searchsorted(x_uni[j],x_list[j][loc_id],side="left")
 						color = cmaps[j].to_rgba(color_id)
-						self.axes[j+self.ncol].plot(np.sort(measure),\
-													np.linspace(0,1,len(measure)),"-",c=color)
+						label = str(Version)
+						self.axes[j+self.ncol].plot(np.sort(measure),np.linspace(0,1,len(measure)),\
+													"-",label=label,c=color)
 
-
+				for ax in self.axes:
+					ax.legend(loc="best")
 
 		## resize(width, height)
 		# self.canvas.resize(300*self.ncol,300*self.nrow)

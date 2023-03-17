@@ -3,6 +3,7 @@ import tensorflow as tf
 import numpy as np
 from collections import defaultdict
 
+
 from bettina.modeling.ori_dev_model import image_dir,inputs,network_tools,dynamics,\
 normalisation_constraints,plasticity_dynamics
 from bettina.modeling.ori_dev_model.tools import calc_tools,\
@@ -44,6 +45,7 @@ class Tf_integrator_new:
 		self.system = params_dict["config_dict"]["system"]
 		self.connectivity_type = params_dict["config_dict"]["Wlgn_to4_params"]["connectivity_type"]
 
+		self.num_pop = 2 if "2pop" in params_dict["config_dict"]["W4to4_params"]["Wrec_mode"] else 1
 
 		self._init_inverse_cortical_interaction_function()
 		nl = self._init_nonlinearity(self.nonlinearity_rule_l4)
@@ -65,7 +67,6 @@ class Tf_integrator_new:
 		self._init_plasticity_dynamics()
 
 
-		
 	def _init_nonlinearity(self,nonlinearity_rule):
 		# TODO: add two different nonlinearities for L 4 and 2/3
 		if nonlinearity_rule == 'rectifier': 
@@ -113,19 +114,20 @@ class Tf_integrator_new:
 			Nvert = self.params_dict["Nvert"]
 			Nlgn = self.params_dict["Nlgn"]
 			lim = Nlgn*Nlgn*N4*N4*Nvert
+
 			if self.system=="one_layer":
 				if "2pop" in self.params_dict["config_dict"]["W4to4_params"]["Wrec_mode"]:
-					l40 = tf.random.uniform([N4**2*2*Nvert],minval=0,maxval=0.1,dtype=tf.float32)
+					l40 = tf.random.uniform([N4**2*2*Nvert],minval=0,maxval=0.01,dtype=tf.float32)
 				else:
-					l40 = tf.random.uniform([N4**2*Nvert],minval=0,maxval=0.1,dtype=tf.float32)
+					l40 = tf.random.uniform([N4**2*Nvert],minval=0,maxval=0.01,dtype=tf.float32)
 				y0 = tf.concat([y[:self.num_lgn_paths*lim], l40], axis=0)
 				
 			elif self.system=="two_layer":
 				N23 = self.params_dict["N23"]
-				l40 = tf.random.uniform([N4*N4*2*Nvert], minval=0, maxval=1, dtype=tf.float32)*0.1
-				l230 = tf.random.uniform([N23*N23*2], minval=0, maxval=1, dtype=tf.float32)*0.1
+				l40 = tf.random.uniform([N4*N4*2*Nvert], minval=0, maxval=0.01, dtype=tf.float32)
+				l230 = tf.random.uniform([N23*N23*2], minval=0, maxval=0.01, dtype=tf.float32)
 				
-				if self.params_dict["config_dict"]["W4to23_params"]["plasticity_rule"] is not None:
+				if self.params_dict["config_dict"]["W4to23_params"]["plasticity_rule"]!="None":
 					y0 = tf.concat([y[:self.num_lgn_paths*lim], l40, l230,\
 									y[self.num_lgn_paths*lim+N4*N4*2*Nvert+N23*N23*2:]], axis=0)
 				else:
@@ -139,12 +141,14 @@ class Tf_integrator_new:
 
 
 	def _init_inverse_cortical_interaction_function(self):
-		if self.params_dict["config_dict"]["Inp_params"]["simulate_activity"]=="steady_state":
+		if True:#self.params_dict["config_dict"]["Inp_params"]["simulate_activity"]=="steady_state":
+
 			if self.system=="one_layer":
-				N4 = self.params_dict["N4"]
-				Nvert = self.params_dict["Nvert"]
+				# N4 = self.params_dict["N4"]
+				# Nvert = self.params_dict["Nvert"]
 				W4to4 = self.params_dict["W4to4"]
-				I_crt = np.linalg.inv(np.diagflat(np.ones(N4*N4*2*Nvert)) - W4to4)
+				N = W4to4.shape[0]
+				I_crt = W4to4 # np.linalg.inv(np.diagflat(np.ones(N)) - W4to4) #
 				self.I_crt = tf.convert_to_tensor(I_crt, dtype=tf.float32)
 				self.I_crt23 = None
 
@@ -182,7 +186,7 @@ class Tf_integrator_new:
 		self.avg = None
 		self.tau = 1.
 		self.len_running_avg = 2
-		self.avg_ampl = 2.
+		self.avg_ampl = 1.1
 		N4 = self.params_dict["N4"]
 		Nvert = self.params_dict["Nvert"]
 		l4_size = N4**2*Nvert
@@ -190,7 +194,7 @@ class Tf_integrator_new:
 
 	
 	def running_avg(self,new_value):
-		new_value = tf.reshape(new_value,[2,-1])
+		new_value = tf.reshape(new_value,[self.num_pop,-1])
 		if self.running_l4_avg is None:
 			self.running_l4_avg = new_value
 			self.avg = new_value
@@ -245,25 +249,30 @@ class Tf_integrator_new:
 		plasticity_rule = self.params_dict["config_dict"]["Wlgn_to4_params"]["plasticity_rule"]
 		constraint_mode = self.params_dict["config_dict"]["Wlgn_to4_params"]["constraint_mode"]
 		mult_norm = self.params_dict["config_dict"]["Wlgn_to4_params"]["mult_norm"]
+		clip_mode = self.params_dict["config_dict"]["Wlgn_to4_params"]["clip_weights"]
+		weight_strength = 1.
 		init_weights = None
 		if mult_norm in ("x","alpha"):
-			print(self.params_dict["init_weights"].shape)
 			init_weights = self.params_dict["init_weights"][:2,:]
 		
 		p_dict["p_lgn_e"] = plasticity_dynamics.Plasticity(dt,c_orth,s_orth,beta_P,\
-							plasticity_rule,constraint_mode,mult_norm,Wlim,init_weights)
+							plasticity_rule,constraint_mode,mult_norm,clip_mode,weight_strength,\
+							Wlim,init_weights)
 
 		if self.connectivity_type=="EI":
 			init_weights = None
 			if mult_norm in ("x","alpha"):
 				init_weights = self.params_dict["init_weights"][2:,:]
 			p_dict["p_lgn_i"] = plasticity_dynamics.Plasticity(dt,c_orth,s_orth,beta_P,\
-								plasticity_rule,constraint_mode,mult_norm,Wlim,init_weights)
+								plasticity_rule,constraint_mode,mult_norm,clip_mode,\
+								weight_strength,Wlim,init_weights)
 
-		if self.params_dict["config_dict"]["W4to23_params"]["plasticity_rule"] is not None:
+		if self.params_dict["config_dict"]["W4to23_params"]["plasticity_rule"]!="None":
 			c_orth = self.params_dict["c_orth_4to23"]
 			s_orth = self.params_dict["s_orth_4to23"]
 			beta_P = self.params_dict["config_dict"]["W4to23_params"]["beta_P"]
+			weight_strength_e = self.params_dict["config_dict"]["W4to23_params"]["aEE"]
+			weight_strength_i = self.params_dict["config_dict"]["W4to23_params"]["aEI"]
 			Wlim = self.params_dict["config_dict"]["W4to23_params"]["Wlim"]
 			init_weights = self.params_dict["init_weights_4to23"]
 			N = init_weights.shape[0]//2
@@ -271,34 +280,43 @@ class Tf_integrator_new:
 			plasticity_rule = self.params_dict["config_dict"]["W4to23_params"]["plasticity_rule"]
 			constraint_mode = self.params_dict["config_dict"]["W4to23_params"]["constraint_mode"]
 			mult_norm = self.params_dict["config_dict"]["W4to23_params"]["mult_norm"]
+			clip_mode = self.params_dict["config_dict"]["W4to23_params"]["clip_weights"]
 			p_dict["p_4to23_e"] = plasticity_dynamics.Plasticity(dt,c_orth,s_orth,beta_P,\
-								plasticity_rule,constraint_mode,mult_norm,Wlim,init_weights[:N])
+								plasticity_rule,constraint_mode,mult_norm,clip_mode,\
+								weight_strength_e,Wlim,init_weights[:N])
 			p_dict["p_4to23_i"] = plasticity_dynamics.Plasticity(dt,c_orth,s_orth,beta_P,\
-								plasticity_rule,constraint_mode,mult_norm,Wlim,init_weights[N:])
+								plasticity_rule,constraint_mode,mult_norm,clip_mode,\
+								weight_strength_i,Wlim,init_weights[N:])
 
-		if self.params_dict["config_dict"]["W4to4_params"]["plasticity_rule"] is not None:
+		if self.params_dict["config_dict"]["W4to4_params"]["plasticity_rule"]!="None":
 			c_orth = None
 			s_orth = None
 			beta_P = self.params_dict["config_dict"]["W4to4_params"]["beta_P"]
 			plasticity_rule = self.params_dict["config_dict"]["W4to4_params"]["plasticity_rule"]
 			constraint_mode = self.params_dict["config_dict"]["W4to4_params"]["constraint_mode"]
 			mult_norm = self.params_dict["config_dict"]["W4to4_params"]["mult_norm"]
+			clip_mode = self.params_dict["config_dict"]["W4to4_params"]["clip_weights"]
+			weight_strength_ei = self.params_dict["config_dict"]["W4to4_params"]["aEI"]
+			weight_strength_ii = self.params_dict["config_dict"]["W4to4_params"]["aII"]
 			p_dict["p_rec4_ei"] = plasticity_dynamics.Plasticity(dt,c_orth,s_orth,beta_P,\
-								plasticity_rule,constraint_mode,mult_norm)
+						plasticity_rule,constraint_mode,mult_norm,clip_mode,weight_strength_ei)
 			p_dict["p_rec4_ii"] = plasticity_dynamics.Plasticity(dt,c_orth,s_orth,beta_P,\
-								plasticity_rule,constraint_mode,mult_norm)
+						plasticity_rule,constraint_mode,mult_norm,clip_mode,weight_strength_ii)
 
-		if self.params_dict["config_dict"]["W23_params"]["plasticity_rule"] is not None:
+		if self.params_dict["config_dict"]["W23_params"]["plasticity_rule"]!="None":
 			c_orth = None
 			s_orth = None
 			beta_P = self.params_dict["config_dict"]["W23_params"]["beta_P"]
 			plasticity_rule = self.params_dict["config_dict"]["W23_params"]["plasticity_rule"]
 			constraint_mode = self.params_dict["config_dict"]["W23_params"]["constraint_mode"]
 			mult_norm = self.params_dict["config_dict"]["W23_params"]["mult_norm"]
+			clip_mode = self.params_dict["config_dict"]["W4to4_params"]["clip_weights"]
+			weight_strength_ei = self.params_dict["config_dict"]["W23_params"]["aEI"]
+			weight_strength_ii = self.params_dict["config_dict"]["W23_params"]["aII"]
 			p_dict["p_rec23_ei"] = plasticity_dynamics.Plasticity(dt,c_orth,s_orth,beta_P,\
-								plasticity_rule,constraint_mode,mult_norm)
+						plasticity_rule,constraint_mode,mult_norm,clip_mode,weight_strength_ei)
 			p_dict["p_rec23_ii"] = plasticity_dynamics.Plasticity(dt,c_orth,s_orth,beta_P,\
-								plasticity_rule,constraint_mode,mult_norm)
+						plasticity_rule,constraint_mode,mult_norm,clip_mode,weight_strength_ii)
 
 		self.p_dict = p_dict
 
@@ -313,12 +331,14 @@ class Tf_integrator_new:
 
 		for item in self.params_dict["config_dict"]["developing_params"]:
 
-			if item=="learning_rate_l4":
-				self.params_dict["config_dict"]["W4to4_params"]["learning_rate"] *=\
+			if item=="learning_rate":
+				self.params_dict["config_dict"]["W4to4_params"]["beta_P"] *=\
 				 np.exp(-1./self.params_dict["config_dict"]["learning_rate_decay_const"])
 
-			elif item=="learning_rate_l23":
-				self.params_dict["config_dict"]["W23_params"]["learning_rate"] *=\
+				self.params_dict["config_dict"]["W23_params"]["beta_P"] *=\
+				 np.exp(-1./self.params_dict["config_dict"]["learning_rate_decay_const"])
+
+				self.params_dict["config_dict"]["Wlgn_to4_params"]["beta_P"] *=\
 				 np.exp(-1./self.params_dict["config_dict"]["learning_rate_decay_const"])
 
 
@@ -329,13 +349,14 @@ class Tf_integrator_new:
 		Nlgn = self.params_dict["Nlgn"]
 		Nvert = self.params_dict["Nvert"]
 		lim = Nlgn*Nlgn*N4*N4*Nvert
-		l4_size = N4**2*2*Nvert
-		crt_size = N4**2*2*Nvert
+		l4_size = N4**2*Nvert*self.num_pop
+		pop_size = N4**2*Nvert
+		crt_size = N4**2*Nvert*self.num_pop
 		if self.system=="two_layer":
-			crt_size = N4**2*Nvert*2 + self.params_dict["N23"]**2*2
+			crt_size = N4**2*Nvert*self.num_pop + self.params_dict["N23"]**2*self.num_pop
 
 		arbor2 = self.params_dict["arbor2"]
-		arbor4to23 = self.params_dict["arbor4to23"]
+		arbor4to23 = self.params_dict["arbor4to23_full"]
 		# arbor2 = tf.stack([arbor]*2)
 
 		init_weights = self.params_dict["init_weights"]
@@ -361,188 +382,200 @@ class Tf_integrator_new:
 		init_norm_alpha = np.nansum(Wlgn_to_4,axis=(0,2))
 		init_norm_x = np.nansum(Wlgn_to_4,axis=1)
 		# print("init_sum",init_norm_alpha[:5],init_norm_x[0,:5])
-		H = tf.convert_to_tensor(np.ones((2,N4**2)),dtype=tf.float32)
+		H = tf.convert_to_tensor(np.ones((self.num_pop,N4**2)),dtype=tf.float32)
 
 
 		## init activity
 		y = y0
 		yt = tf.convert_to_tensor([y0])
-		l4t = tf.convert_to_tensor([y0[num_lgn_paths*lim:num_lgn_paths*lim+crt_size]])
+		time_dep_dict = defaultdict(list)
+		time_dep_dict["l4t"].append(y0[num_lgn_paths*lim:num_lgn_paths*lim+crt_size])
+		if self.p_dict["p_rec4_ii"] is not None:
+			time_dep_dict["W4to4t"].append(self.params_dict["W4to4"].numpy())
+		if self.p_dict["p_rec23_ii"] is not None:
+			time_dep_dict["W23to23t"].append(self.params_dict["W4to4"].numpy())
 		tf.random.set_seed(self.params_dict["config_dict"]["random_seed"]*113)
 		
 		print("Number of plasticity steps: {}".format(self.num_plasticity_steps))
 		for istep in range(self.num_plasticity_steps):
 			dW = defaultdict(lambda:0)
-			for jinput in range(self.avg_no_inp):
+			
+			self.update_developing_parameters(istep)
+			y = self.yield_init_conditions(y)
 
-				self.update_developing_parameters(istep)
-				print("CHECK PARAM UPDATE",self.params_dict["config_dict"]["W4to4_params"]["learning_rate"])
+			# shift = tf.random.categorical(tf.math.log([[0.5,0.5]]),2) * 2 - 1
+			# shift_y,shift_x = shift[0,0],shift[0,1]
+			for jexp in range(self.expanse_steps):
 
-				####### generate LGN input per L4 simulation #######
-				rng_seed = self.params_dict["config_dict"]["random_seed"]*1000 +\
-						   jinput + istep*self.avg_no_inp
+				# average plasticity step over avg_no_inp input patterns
+				for kinput in range(self.avg_no_inp):
 
-				inp = inputs.Inputs_lgn((Nret,Nret),self.params_dict["Version"].numpy(),rng_seed)
+					####### generate LGN input per L4 simulation #######
+					rng_seed = self.params_dict["config_dict"]["random_seed"]*1000 +\
+							   kinput + istep*self.avg_no_inp
+					inp = inputs.Inputs_lgn((Nret,Nret),self.params_dict["Version"].numpy(),\
+							rng_seed)
+					lgn = inp.create_lgn_input(\
+						  self.params_dict["config_dict"]["Inp_params"],\
+						  self.params_dict["config_dict"]["Inp_params"]["input_type"],\
+						  self.params_dict["Wret_to_lgn"].numpy(),\
+						  expansion_timestep = jexp,
+						  )
+					lgn = inp.apply_ONOFF_bias(lgn,self.params_dict["config_dict"]["Inp_params"])
+					## use same inputs for E and I units
+					if num_lgn_paths==4:
+						lgn = np.concatenate([lgn,lgn])
+					lgn = tf.convert_to_tensor(lgn.reshape(num_lgn_paths,Nlgn**2),dtype=tf.float32)
+					print("lgn",lgn.shape,lgn[0,0])
 
-				lgn = inp.create_lgn_input(\
-					  self.params_dict["config_dict"]["Inp_params"],\
-					  self.params_dict["config_dict"]["Inp_params"]["input_type"],\
-					  self.params_dict["Wret_to_lgn"].numpy()
-					  )
-				lgn = inp.apply_ONOFF_bias(lgn,self.params_dict["config_dict"]["Inp_params"])
-				## use same inputs for E and I units
-				if num_lgn_paths==4:
-					lgn = np.concatenate([lgn,lgn])
-				lgn = tf.convert_to_tensor(lgn,dtype=tf.float32)
-				self.params_dict.update({"lgn" : lgn})
-
-				shift = tf.random.categorical(tf.math.log([[0.5,0.5]]),2) * 2 - 1
-				shift_y,shift_x = shift[0,0],shift[0,1]
-				for kexp in range(self.expanse_steps):
 					print("")
-					print("Plasticity step: {}, input: {}, exp: {}".format(istep,jinput,kexp))
+					print("Plasticity step: {}, exp: {}, input: {}".format(istep,jexp,kinput))
 					sys.stdout.flush()
 
 					# shift input pattern
-					lgn = tf.reshape(self.params_dict["lgn"],[-1,Nlgn,Nlgn])
-					lgn = tf.roll(tf.roll(lgn,shift_y,axis=1),shift_x,axis=2)
-					self.params_dict.update({"lgn" : tf.reshape(lgn,[-1,Nlgn**2])})
+					self.params_dict.update({"lgn" : lgn})
+					# lgn = tf.reshape(self.params_dict["lgn"],[-1,Nlgn,Nlgn])
+					# lgn = tf.roll(tf.roll(lgn,shift_y,axis=1),shift_x,axis=2)
+					# self.params_dict.update({"lgn" : tf.reshape(lgn,[-1,Nlgn**2])})
 
-					y0 = self.yield_init_conditions(y)
-					y = y0
-					####### L4 activity dynamics #######
+					print("Comment out next line if running with antolik_etal settings")
+					if self.expanse_steps<2:
+						y = self.yield_init_conditions(y)
+
+
+					# L4 activity dynamics
 					y,l4_avg,theta_4 = l4_dynamics(scan_func,y,t,dt,self.params_dict,\
 										rhs_l4=self.rhs_l4,rhs_l23=self.rhs_l23,\
 										I_crt=self.I_crt,I_crt23=self.I_crt23)
 					self.params_dict["config_dict"]["W4to4_params"]["theta_4"] = theta_4
 					self.params_dict["config_dict"]["W4to4_params"]["l4_avg"] = l4_avg
 					l4 = y[lim*num_lgn_paths:num_lgn_paths*lim+crt_size]
-					print("L4",istep,np.nanmin(l4),np.nanmax(l4),np.sum(np.logical_not(np.isfinite(l4))))
+					print("L4",istep,np.nanmin(l4),np.nanmax(l4),\
+						np.nanmin(theta_4),np.nanmin(l4_avg))
 
 					# compute running average of l4 activity
 					self.running_avg(y[lim*num_lgn_paths:num_lgn_paths*lim+l4_size])
 
 					# save timestep of cortical activity
 					if ((istep%self.saving_stepsize)==0 or istep==(self.num_plasticity_steps-1)):
-						l4t = tf.concat([l4t,[y[lim*num_lgn_paths:num_lgn_paths*lim+crt_size]]], 0)
+						time_dep_dict["l4t"].append(y[lim*num_lgn_paths:num_lgn_paths*lim+crt_size].numpy())
 
 					# check whether cortical activity has diverged, if so break
 					if np.nanmean(y[lim*num_lgn_paths:])>self.divergence_limit:
-						dW += self.plastic.plasticity_wrapper(y*0,0)
-						print("Activity diverged (={}), skip plasticity update step: {},\
-							   input: {}".format(np.nanmean(y[lim*num_lgn_paths:]),istep,jinput))
-						sys.stdout.flush()
+						print("break")
+						break
 					
 					# compute target activity for homeostatic normalisation
 					if self.l4_target is None:
 						self.l4_target = self.avg_ampl*tf.reduce_mean(tf.reshape(\
-										 y[lim*num_lgn_paths:num_lgn_paths*lim+l4_size],[2,-1]),axis=1)
+										 y[lim*num_lgn_paths:num_lgn_paths*lim+l4_size],[self.num_pop,-1]),\
+										 axis=1)
 
 					# ff plasticity update
 					# dW += self.plastic.plasticity_wrapper(y,0)
 					# dW = tf.reshape(dW, [s])
+					timestep = istep * self.expanse_steps + jexp
 					l4 = y[lim*num_lgn_paths:num_lgn_paths*lim+l4_size]
-					l23 = y[lim*num_lgn_paths+l4_size:]
-					Wlgn_to_4 = tf.reshape(y[:lim*num_lgn_paths],[num_lgn_paths,l4_size//2,-1])
+					l23 = y[lim*num_lgn_paths+l4_size:num_lgn_paths*lim+crt_size]
+					Wlgn_to_4 = tf.reshape(y[:lim*num_lgn_paths],[num_lgn_paths,pop_size,-1])
 					dW_dict = plasticity_dynamics.unconstrained_plasticity_wrapper(self.p_dict,\
 								l4, l23, lgn, Wlgn_to_4, self.params_dict["W4to4"],\
-								self.params_dict["W4to23"], self.params_dict["W23to23"], t)
+								self.params_dict["W4to23"], self.params_dict["W23to23"], timestep)
 					for key,value in dW_dict.items():
 						dW[key] += value
-						print("key",istep,np.nanmin(value),np.nanmax(value))
+						print("key",key,istep,np.nanmin(value),np.nanmax(value))
 					
-					
-			if np.isnan(np.nanmedian(dW["dW_lgn_e"][dW["dW_lgn_e"]>0])):
-				print("Median plasticity update is NaN at t={}, exit!".format(jinput))
-				break
+
+				print("CHECK SHAPE2",dW["dW_lgn_e"].shape)					
+				if isinstance(dW["dW_lgn_e"],int):
+					print("int break")
+					break
+				elif np.isnan(np.nanmedian(dW["dW_lgn_e"][tf.reshape(arbor2[:2,:,:],[-1])>0])):
+					print("Median plasticity update is NaN at t={}, exit!".format(kinput))
+					break
 
 			
-			# Plasticity update averaged over avg_no_inp number of input patterns
-			s = num_lgn_paths*lim
-			# Wlgn_to_4 = self.plastic.constraint_update_wrapper(y,dt,dW[:s],arbor2,c_orth,s_orth)
+				# Plasticity update averaged over avg_no_inp number of input patterns
+				s = num_lgn_paths*lim
+				Wlgn_to_4 = tf.reshape(y[:s],[num_lgn_paths,pop_size,Nlgn**2])
+				Wlgn_to_4,W4to4,W4to23,W23to23 =\
+				 plasticity_dynamics.constraint_update_wrapper(dW,self.p_dict,Wlgn_to_4,\
+															self.params_dict["arbor2"],\
+															self.params_dict["W4to4"],\
+															self.params_dict["arbor4to4_full"],\
+															self.params_dict["W4to23"],\
+															self.params_dict["arbor4to23_full"],\
+															self.params_dict["W23to23"],\
+															self.params_dict["arbor23to23_full"],\
+															dt,self.params_dict)
 
-			Wlgn_to_4 = tf.reshape(y[:s],[num_lgn_paths,l4_size//2,Nlgn**2])
-			Wlgn_to_4,W4to4,W4to23,W23to23 =\
-			 plasticity_dynamics.constraint_update_wrapper(dW,self.p_dict,Wlgn_to_4,\
+				# synaptic normalisation
+				Wlgn_to_4,W4to4,W4to23,W23to23 =\
+				 plasticity_dynamics.clip_weights_wrapper(self.p_dict,Wlgn_to_4,\
 														self.params_dict["arbor2"],\
 														self.params_dict["W4to4"],\
-														self.params_dict["arbor4to4"],\
+														self.params_dict["arbor4to4_full"],\
 														self.params_dict["W4to23"],\
-														self.params_dict["arbor4to23"],\
+														self.params_dict["arbor4to23_full"],\
 														self.params_dict["W23to23"],\
-														self.params_dict["arbor23to23"],dt)
-			self.params_dict["W4to4"] = W4to4
-			self.params_dict["W4to23"] = W4to23
-			self.params_dict["W23to23"] = W23to23
+														self.params_dict["arbor23to23_full"],\
+														self.params_dict)
 
-			# synaptic normalisation
-			# Wlgn_to_4 = self.plastic.clip_weights(Wlgn_to_4,Wlim,arbor2)
-			Wlgn_to_4,W4to4,W4to23,W23to23 =\
-			 plasticity_dynamics.clip_weights_wrapper(self.p_dict,Wlgn_to_4,\
-													self.params_dict["arbor2"],\
-													self.params_dict["W4to4"],\
-													self.params_dict["arbor4to4"],\
-													self.params_dict["W4to23"],\
-													self.params_dict["arbor4to23"],\
-													self.params_dict["W23to23"],\
-													self.params_dict["arbor23to23"])
-			self.params_dict["W4to4"] = W4to4
-			self.params_dict["W4to23"] = W4to23
-			self.params_dict["W23to23"] = W23to23
+				if True:#check_for_frozen_weights(Wlgn_to_4,Wlim,arbor2):	  
+					Wlgn_to_4,W4to4,W4to23,W23to23,H =\
+					 plasticity_dynamics.mult_norm_wrapper(self.p_dict,Wlgn_to_4,\
+														self.params_dict["arbor2"],\
+														self.params_dict["W4to4"],\
+														self.params_dict["arbor4to4_full"],\
+														self.params_dict["W4to23"],\
+														self.params_dict["arbor4to23_full"],\
+														self.params_dict["W23to23"],\
+														self.params_dict["arbor23to23_full"],\
+														H,self.running_l4_avg,self.l4_target,\
+														self.params_dict)
 
-			if True:#check_for_frozen_weights(Wlgn_to_4,Wlim,arbor2):
-				# Wlgn_to_4,H = self.plastic.mult_normalization(Wlgn_to_4,arbor2,Wlim,\
-				# 												init_weights,\
-				# 												c_orth,H,self.running_l4_avg,\
-				# 												self.l4_target)			  
-				Wlgn_to_4,W4to4,W4to23,W23to23,H =\
-				 plasticity_dynamics.mult_norm_wrapper(self.p_dict,Wlgn_to_4,\
-													self.params_dict["arbor2"],\
-													self.params_dict["W4to4"],\
-													self.params_dict["arbor4to4"],\
-													self.params_dict["W4to23"],\
-													self.params_dict["arbor4to23"],\
-													self.params_dict["W23to23"],\
-													self.params_dict["arbor23to23"],\
-													H,self.running_l4_avg,self.l4_target)
-				self.params_dict["W4to4"] = W4to4
-				self.params_dict["W4to23"] = W4to23
-				self.params_dict["W23to23"] = W23to23
-
-			# check fraction of synaptic ff weights are frozen
-			frozen = np.sum(tf.boolean_mask(Wlgn_to_4,arbor2)<=0) + \
-					 np.sum(tf.boolean_mask(Wlgn_to_4,arbor2)>=Wlim*(arbor2[arbor2>0]))
-			if frozen>(0.9*np.sum(arbor2.numpy())):
-				self.frozen = True
-				print("0.9 of ff weights are frozen at t={}, exit integration!".format(jinput))
-				break
-			Wlgn_to_4 = tf.reshape(Wlgn_to_4,[lim*num_lgn_paths])
+				# check fraction of synaptic ff weights are frozen
+				frozen = np.sum(tf.boolean_mask(Wlgn_to_4,arbor2)<=0) + \
+						 np.sum(tf.boolean_mask(Wlgn_to_4,arbor2)>=Wlim*(arbor2[arbor2>0]))
+				if frozen>(0.9*np.sum(arbor2.numpy())):
+					self.frozen = True
+					print("0.9 of ff weights are frozen at t={}, exit integration!".format(kinput))
+					break
+				Wlgn_to_4 = tf.reshape(Wlgn_to_4,[lim*num_lgn_paths])
 
 
-			## if w4to23 is plastic do multiplicative normalisation
-			# if self.params_dict["config_dict"]["W4to23_params"]["plastic"]:
-			# 	l23_size = self.params_dict["N23"]**2*2
-			# 	W4to23 = y[s+crt_size:]
-			# 	arbor4to23_full = self.params_dict["arbor4to23_full"]
-			# 	W4to23 = dynamics.constrain_plasticity_update_W4to23(y,dt,dW[s:],arbor4to23,\
-			# 													arbor4to23_full,Wlim,\
-			# 													self.params_dict,c_orth_4to23,\
-			# 													s_orth_4to23)
-			# 	W4to23 = self.plastic.clip_weights(W4to23,Wlim,arbor4to23_full)
-			# 	init_weights_4to23 = self.params_dict["init_weights_4to23"]
-			# 	W4to23,_ = synaptic_normalization(W4to23,arbor4to23_full,Wlim,init_weights_4to23,\
-			# 									axis=0)
-			# 	W4to23 = tf.reshape(W4to23,[l23_size*l4_size])
-			# 	####### concatenate updated connectivity to y vector #######
-			# 	y = tf.concat([Wlgn_to_4,y[lim*num_lgn_paths:lim*num_lgn_paths+crt_size],\
-			# 					W4to23],0)
-			# else:
-			y = tf.concat([Wlgn_to_4,y[lim*num_lgn_paths:]],0)
+				## if w4to23 is plastic do multiplicative normalisation
+				# if self.params_dict["config_dict"]["W4to23_params"]["plastic"]:
+				# 	l23_size = self.params_dict["N23"]**2*2
+				# 	W4to23 = y[s+crt_size:]
+				# 	arbor4to23_full = self.params_dict["arbor4to23_full"]
+				# 	W4to23 = dynamics.constrain_plasticity_update_W4to23(y,dt,dW[s:],arbor4to23,\
+				# 													arbor4to23_full,Wlim,\
+				# 													self.params_dict,c_orth_4to23,\
+				# 													s_orth_4to23)
+				# 	W4to23 = self.plastic.clip_weights(W4to23,Wlim,arbor4to23_full)
+				# 	init_weights_4to23 = self.params_dict["init_weights_4to23"]
+				# 	W4to23,_ = synaptic_normalization(W4to23,arbor4to23_full,Wlim,init_weights_4to23,\
+				# 									axis=0)
+				# 	W4to23 = tf.reshape(W4to23,[l23_size*l4_size])
+				# 	####### concatenate updated connectivity to y vector #######
+				# 	y = tf.concat([Wlgn_to_4,y[lim*num_lgn_paths:lim*num_lgn_paths+crt_size],\
+				# 					W4to23],0)
+				# else:
+				y = tf.concat([Wlgn_to_4,y[lim*num_lgn_paths:]],0)
+				# if self.params_dict["config_dict"]["W4to23_params"]["plasticity_rule"]!="None":
+				# 	y = tf.concat([y[:lim*num_lgn_paths+crt_size],\
+				# 		tf.reshape(self.params_dict["W4to23"],[-1])],0)
 
 
-			if ((istep%self.saving_stepsize)==0 or istep==(self.num_plasticity_steps-1)):
-				yt = tf.concat([yt,[y]], 0)
-		return yt,l4t
+				if ((istep%self.saving_stepsize)==0 or istep==(self.num_plasticity_steps-1)):
+					yt = tf.concat([yt,[y]], 0)
+					if self.p_dict["p_rec4_ii"] is not None:
+						time_dep_dict["W4to4t"].append(self.params_dict["W4to4"])
+					if self.p_dict["p_rec23_ii"] is not None:
+						time_dep_dict["W23to23t"].append(self.params_dict["W23to23"])
+
+		return yt,time_dep_dict
 		
 
 	def _step_func(self, func, y, t, dt, **kwargs):

@@ -24,7 +24,7 @@ class Inputs:
 		# rng = np.random.RandomState(self.Version*5101+202)
 		self.rng = np.random.RandomState(self.random_seed*5101+2023)
 
-	def create_matrix(self, inp_params, profile):		
+	def create_matrix(self, inp_params, profile, **kwargs):		
 		self.profile = profile
 		##TODO: choose time-varying or static input
 		# if not inp_params:
@@ -93,12 +93,13 @@ class Inputs:
 
 		if self.profile=="white_noise_online":
 			N = self.size[0]
+			expansion_timestep = kwargs["expansion_timestep"]
 			factor = inp_params["onoff_corr_factor"]
 			Nsur = 1
 			pad_size = 0
 
-			grid = np.linspace(-0.5,0.5,N+2*pad_size,endpoint=False)
-			x,y = np.meshgrid(grid,grid)
+			# grid = np.linspace(-0.5,0.5,N+2*pad_size,endpoint=False)
+			# x,y = np.meshgrid(grid,grid)
 
 			whitenoise = self.rng.randn(N,N,3)
 			whitenoise = np.pad(whitenoise,((pad_size,pad_size),(pad_size,pad_size),\
@@ -107,46 +108,63 @@ class Inputs:
 			noise_of = 0 + 1.*whitenoise[...,1] + factor*whitenoise[...,-1]
 			input_patterns = np.stack([noise_on,noise_of])
 
+			# move input pattern to simulate moving waves
+			vel = 0.5
+			shift = vel * expansion_timestep
+			input_patterns = np.roll(np.roll(input_patterns,shift=shift,axis=1),shift=shift,axis=2)
+
 			input_patterns = np.swapaxes(input_patterns.reshape(2,N*N),0,1)
 			return np.real(input_patterns)
 
-		elif self.profile=="ringlike":
-			Nsur = inp_params["Nsur"]
-			expansion_timesteps = inp_params["expanse_time"]
+		if self.profile=="gaussian_noise_online":
+			N = int(self.size[0])
+			pad_size = 0
+			grid = np.linspace(-0.5,0.5,N+2*pad_size,endpoint=False)
+			x,y = np.meshgrid(grid,grid)
+			sigma = 0.1
+			centered_gaussian = np.exp(-(x**2+y**2)/2./sigma**2)
+			centered_gaussian = np.fft.fftshift(centered_gaussian)
+
+			random_angles_sym = np.angle(np.fft.fft2(self.rng.randn(2,N,N),axes=(1,2)))
+			
+			random_matrix = np.exp(-1j * random_angles_sym)         # Actual complex-number matrix
+
+			# Multiply gaussian=(abs values) with random phases
+			ft_gaussian = centered_gaussian[None,:,:] * random_matrix
+
+			# Create topology map by IFFTing the randomized ring
+			input_patterns = np.fft.ifft2(ft_gaussian,axes=(1,2))*np.sqrt(2*np.pi*N**2)
+			input_patterns = np.swapaxes(input_patterns.reshape(2,N*N),0,1)
+			return np.real(input_patterns)
+
+		elif self.profile=="ringlike_online":
+			# expansion_timesteps = inp_params["expanse_time"]
 			init_radius = inp_params["init_radius"]
 			mean_width = inp_params["mean_width"]
 			h,w = self.size
-			inputs = np.zeros((h*w,Nsur*(expansion_timesteps+1)))
+			# inputs = np.zeros((h*w,(expansion_timesteps)))
+			expansion_timestep = kwargs["expansion_timestep"]
 
-			ctrs = []
-			for input_pattern in range(Nsur):
-				ctrx = self.rng.uniform(0,1,1)[0]
-				ctry = self.rng.uniform(0,1,1)[0]
-				gridx = np.linspace(-ctrx,1-ctrx,self.size[0],endpoint=False)
-				gridy = np.linspace(-ctry,1-ctry,self.size[1],endpoint=False)
-				x,y = np.meshgrid(gridx,gridy)
-				# dist = np.sqrt(distance(x)**2 + distance(y)**2)
-				dist = np.sqrt(x**2 + y**2)
+			# random initial position
+			ctrx = self.rng.uniform(-init_radius,1+init_radius,1)[0]
+			ctry = self.rng.uniform(-init_radius,1+init_radius,1)[0]
+			gridx = np.linspace(-ctrx,1-ctrx,self.size[0],endpoint=False)
+			gridy = np.linspace(-ctry,1-ctry,self.size[1],endpoint=False)
+			x,y = np.meshgrid(gridx,gridy)
+			dist = np.sqrt(x**2 + y**2)
 
-				init_r = np.clip(self.rng.randn(1) * 0.2 + init_radius,0.05,1)
-				# init_r = rng.uniform(0.01,0.5,1)
-				vel = np.clip(self.rng.randn(1) * 0.05 + 0.1,0.01,0.5)
-				# vel = rng.uniform(0.01,0.7,1)
-				# width = rng.uniform(0.05,1.,1)
-				width = np.clip(self.rng.randn(1) * 0.05 + mean_width,0.01,0.9)
-				sign = self.rng.choice([-1.,1.],1)
-				print("settings",init_r,vel,width,sign)
+			init_r = np.clip(self.rng.randn(1) * 0.1 + init_radius,0.05,0.3)
+			vel = np.clip(self.rng.randn(1) * 0.05 + 0.1,0.05,0.1)
+			width = np.clip(self.rng.randn(1) * 0.05 + mean_width,0.01,0.3)
+			sign = self.rng.choice([-1.,1.],1)
+			# print("SETTINGS",np.nanmax(dist),np.nanmin(dist),init_r,vel,width,sign)
 
-				for i in range(expansion_timesteps):
-					circle = np.logical_and( dist > (init_r + vel*i),\
-							dist < (init_r + vel*i + width) ).astype(float)\
-							* sign * dist
-					inputs[:,i+input_pattern*(expansion_timesteps+1)] = circle.flatten()
-				ctrs.append(np.array([ctrx,ctry]))
-				# inputs[:,input_pattern*expansion_timesteps:(input_pattern+1)*expansion_timesteps] /=\
-				# max(np.nanstd(inputs[:,input_pattern*expansion_timesteps:(input_pattern+1)*expansion_timesteps],axis=0))
+			circle = np.logical_and(dist > (init_r + vel*expansion_timestep),\
+									dist < (init_r + vel*expansion_timestep + width)).astype(float)\
+					* sign * dist
+			inputs = circle.flatten()
 
-			return inputs, np.array(ctrs)
+			return inputs
 
 		elif self.profile=="ringlike_onoff":
 			Nsur = inp_params["Nsur"]
@@ -167,7 +185,7 @@ class Inputs:
 				dist_on = np.sqrt(x**2 + y**2)
 
 				init_r = np.clip(self.rng.randn(1) * init_radius*0.9 + init_radius,0.01,1.)
-				vel = np.clip(self.rng.randn(1) * 0.08 + 0.1,0.01,0.7)
+				vel = np.clip(self.rng.randn(1) * 0.02 + 0.1,0.01,0.15)
 				width = self.rng.uniform(0.05,1.,1)
 
 				ctrx_of = self.rng.uniform(ctrx-0.3,ctrx+0.3,1)
@@ -218,45 +236,34 @@ class Inputs:
 		## model spatially localised traveling wave like input
 		elif self.profile=="localized_waves_online":
 
-			grid = np.linspace(-0.5,0.5,self.size[0],endpoint=False)
+			N = self.size[0]
+			expansion_timestep = kwargs["expansion_timestep"]
+			factor = inp_params["onoff_corr_factor"]
+			Nsur = 1
+			pad_size = 0
+
+			whitenoise = self.rng.randn(N,N,3)
+			whitenoise = np.pad(whitenoise,((pad_size,pad_size),(pad_size,pad_size),\
+								(0,0)),'constant')
+			noise_on = 0 + 1.*whitenoise[...,0] - factor*whitenoise[...,-1]
+			noise_of = 0 + 1.*whitenoise[...,1] + factor*whitenoise[...,-1]
+			input_patterns = np.stack([noise_on,noise_of])
+			print("input_patterns",input_patterns.shape)
+
+			vel = 0.5
+			shift = vel * expansion_timestep
+			input_patterns = np.roll(np.roll(input_patterns,shift=shift,axis=1),shift=shift,axis=2)
+
+			grid = np.linspace(-0.5,0.5,N+2*pad_size,endpoint=False)
 			x,y = np.meshgrid(grid,grid)
+			sigma = 0.3
+			centered_gaussian = np.exp(-(x**2+y**2)/2./sigma**2)
+			input_patterns *= centered_gaussian[None,:,:]
 
-			mean_ecc = 0.9
-			sd_ecc = 0.05
-			ecc = 0.99#np.clip(np.random.randn(1)*sd_ecc + mean_ecc,0,0.99)
-			# print("ecc",ecc)
-			
-			mean_size = 1.
-			sd_size = 0.05
-			size_x = np.random.randn(1)*sd_size + mean_size
-			size_y = size_x*np.sqrt(1 - ecc**2)
+			# input_patterns = np.stack([centered_gaussian,centered_gaussian])
 
-			ori = np.pi/4.#self.rng.random(size=1)*2*np.pi
-			cos_theta = np.cos(ori)
-			sin_theta = np.sin(ori)
-
-			phi_x = 0.5#self.rng.random(size=1)
-			phi_y = 0.5#self.rng.random(size=1)
-			x_on = distance(x+phi_x)
-			x_of = distance(x + phi_x + 0*self.rng.choice([-1,+1],size=1) * 0.3)
-			y = distance(y+phi_y)
-			y_on,y_of = y,y
-
-			x_on2 = (x_on*cos_theta - y*sin_theta) #* size_x
-			y_on = (x_on*sin_theta + y*cos_theta) #* size_y
-			x_on = x_on2
-			print("x_on",x_on)
-
-			x_of2 = (x_of*cos_theta - y*sin_theta) #* size_x
-			y_of = (x_of*sin_theta + y*cos_theta) #* size_y
-			x_of = x_of2
-			# print("xon",x_on**2)
-
-			input_on = np.abs(x_on)#gaussian(x_on,y_on,0.2)
-			input_off = gaussian(x_of,y_of,0.2)
-
-			input_patterns = np.swapaxes(np.stack([input_on,input_off]).reshape(2,-1),0,1)
-			return input_patterns
+			input_patterns = np.swapaxes(input_patterns.reshape(2,N*N),0,1)
+			return np.real(input_patterns)
 
 
 class Inputs_lgn(Inputs):
@@ -267,52 +274,60 @@ class Inputs_lgn(Inputs):
 	def __init__(self, size, Version, random_seed):
 		super().__init__(size,Version,random_seed)
 		self.rng = np.random.RandomState(self.random_seed*5101+2023)
-	def create_matrix(self, inp_params, profile):
-		return super().create_matrix(inp_params, profile)
+	def create_matrix(self, inp_params, profile, **kwargs):
+		return super().create_matrix(inp_params, profile, **kwargs)
 
-	def create_lgn_input(self, inp_params, profile, Wret_to_lgn):
+	def create_lgn_input(self, inp_params, profile, Wret_to_lgn, **kwargs):
 		
 		if "white_noise" in profile:
-			inp_ret = self.create_matrix(inp_params, profile)
+			inp_ret = self.create_matrix(inp_params, profile, **kwargs)
+			lgn = np.dot(Wret_to_lgn,inp_ret)
+			lgn = np.swapaxes(lgn,0,1)
 
 		elif "GRF" in profile:
-			inp_ret, orth_base_vec, stim_idx = self.create_matrix(inp_params, "GRF")
-			# lgn = np.dot(Wret_to_lgn,inp_ret)
-			# lgn = np.swapaxes(lgn,0,1)
+			inp_ret, orth_base_vec, stim_idx = self.create_matrix(inp_params, "GRF", **kwargs)
+			lgn = np.dot(Wret_to_lgn,inp_ret)
+			lgn = np.swapaxes(lgn,0,1)
 
 		elif "ringlike" in profile:
-			inp_ret, ctrs = self.create_matrix(inp_params, "ringlike")
+			inp_ret = self.create_matrix(inp_params, "ringlike_online", **kwargs)
 			inp_ret = np.stack([inp_ret,-inp_ret])
-			inp_ret = np.swapaxes(inp_ret,0,1)
-			# lgn = np.dot(Wret_to_lgn,inp_ret)
-			### lgn = np.stack([dynamics.nl(lgn),dynamics.nl(-lgn)])
-			# lgn = np.stack([lgn,-lgn])
+			lgn = np.matmul(Wret_to_lgn,inp_ret.T)
+			lgn = np.swapaxes(lgn,0,1)
 
 		elif "ringlike_onoff" in profile:
-			inp_ret, ctrs = self.create_matrix(inp_params, "ringlike_onoff")
-		
+			inp_ret, ctrs = self.create_matrix(inp_params, "ringlike_onoff", **kwargs)
+			lgn = np.dot(Wret_to_lgn,inp_ret)
+			lgn = np.swapaxes(lgn,0,1)
+
 		elif "moving_grating" in profile:
-			inp_ret = self.create_matrix(inp_params, "moving_grating")
+			inp_ret = self.create_matrix(inp_params, "moving_grating", **kwargs)
+			lgn = np.dot(Wret_to_lgn,inp_ret)
+			lgn = np.swapaxes(lgn,0,1)
 
 		elif "localized_waves" in profile:
-			inp_ret = self.create_matrix(inp_params, profile)
-			
+			inp_ret = self.create_matrix(inp_params, profile, **kwargs)
+			lgn = np.dot(Wret_to_lgn,inp_ret)
+			lgn = np.swapaxes(lgn,0,1)
+
+		elif "gaussian_noise_online" in profile:
+			inp_ret = self.create_matrix(inp_params, "gaussian_noise_online", **kwargs)
+			lgn = np.swapaxes(inp_ret,0,1)
 
 		## convolve input with Retina-to-LGN connections
 		## and swap axes such that lgn.shape = 2 x dimensions
-		if "localized_waves" not in profile:
-			if Wret_to_lgn.ndim==2:
-				lgn = np.dot(Wret_to_lgn,inp_ret)
-				lgn = np.swapaxes(lgn,0,1)
-			else:
-				lgn = np.stack([np.dot(Wret_to_lgn[0,...],inp_ret[:,0,...]),\
-				 				np.dot(Wret_to_lgn[1,...],inp_ret[:,1,...])])
-		else:
-			lgn = np.swapaxes(inp_ret,0,1)
+		# if Wret_to_lgn.ndim==2:
+		# 	lgn = np.dot(Wret_to_lgn,inp_ret)
+		# 	lgn = np.swapaxes(lgn,0,1)
+		# else:
+		# 	lgn = np.stack([np.dot(Wret_to_lgn[0,...],inp_ret[:,0,...]),\
+		# 	 				np.dot(Wret_to_lgn[1,...],inp_ret[:,1,...])])
+
 
 		## normalise lgn input to SD=1 and shift its mean to positive value
+		## 'online' should only ever produce one input frame per call
 		if ("online" in profile):
-			if "white_noise" in profile:
+			if ("white_noise" in profile or "gaussian_noise" in profile):
 				# if True:
 				# 	lgn /= np.nanstd(lgn,axis=1)[:,None]
 				# 	## lgn += -np.nanmin(lgn,axis=(1))[:,None] + 1
@@ -326,22 +341,33 @@ class Inputs_lgn(Inputs):
 
 				# # # try to keep mean of on/off inputs the same, but weight SD differently
 				# else:
-				lgn += -np.nanmean(lgn,axis=(1))[:,None]
-				lgn /= np.nanstd(lgn,axis=1)[:,None]
 
-				lgn[0,:] *= 1.
-				lgn[1,:] *= inp_params["onoff_rel_weight"]
-				## make input positive and slight diff in mean between on and off
-				lgn += 10 #+ 0.5*self.rng.randn(2)[:,None]
+				# lgn += -np.nanmean(lgn,axis=(1))[:,None]
+				# lgn /= np.nanstd(lgn,axis=1)[:,None]
+
+				# lgn[0,:] *= 1.
+				# lgn[1,:] *= inp_params["onoff_rel_weight"]
+				# ## make input positive and slight diff in mean between on and off
+				lgn += 5 #+ 0.5*self.rng.randn(2)[:,None]
 				# lgn = np.clip(lgn,0,np.nanmax(lgn))
 
+				# make input similar in amplitude and sparsity to retinal waves in antolik et al
+				# lgn /= 10.
+				# lgn += 0.06
+				# lgn = np.clip(lgn,0,np.nanmax(lgn))				
+			else:
+				# normalise lgn input to between 0 and 1
+				if np.nanmax(lgn)>0:
+					lgn /= np.nanmax(lgn)
+				lgn = np.clip(lgn,0,1)
 		else:
-			T_exp = inp_params["expanse_time"]
-			for isur in range(inp_params["Nsur"]+1):
-				lgn_sd = np.nanstd(lgn[:,:,isur*(T_exp+1):(isur+1)*(T_exp+1)-1],axis=(1,2))
-				lgn[:,:,isur*(T_exp+1):(isur+1)*(T_exp+1)-1] /= lgn_sd[:,None,None]
-				lgn[:,:,isur*(T_exp+1):(isur+1)*(T_exp+1)-1] +=\
-				 - np.nanmin(lgn[:,:,isur*(T_exp+1):(isur+1)*(T_exp+1)-1]) + 1
+			pass
+			# T_exp = inp_params["expanse_time"]
+			# for isur in range(inp_params["Nsur"]+1):
+			# 	lgn_sd = np.nanstd(lgn[:,:,isur*(T_exp+1):(isur+1)*(T_exp+1)-1],axis=(1,2))
+			# 	lgn[:,:,isur*(T_exp+1):(isur+1)*(T_exp+1)-1] /= lgn_sd[:,None,None]
+			# 	lgn[:,:,isur*(T_exp+1):(isur+1)*(T_exp+1)-1] +=\
+			# 	 - np.nanmin(lgn[:,:,isur*(T_exp+1):(isur+1)*(T_exp+1)-1]) + 1
 		
 		# # ====================== add noise to events only ======================
 		# for isur in range(inp_params["Nsur"]):
@@ -355,8 +381,8 @@ class Inputs_lgn(Inputs):
 
 	def apply_ONOFF_bias(self,lgn,inp_params):
 		## OFF bias regions
-		exp_off_dominant_on = 1.
-		exp_off_dominant_of = 1.
+		exp_off_dominant_on = 0.
+		exp_off_dominant_of = 0.
 		exp = np.array([1.,1.])
 		rng = np.random.RandomState(self.random_seed*5101+202)
 		if "off_bias_strength" in inp_params.keys():
@@ -403,18 +429,19 @@ if __name__=="__main__":
 	from bettina.modeling.ori_dev_model.tools import analysis_tools
 	
 	rA = 0.25
-	Wret_to_lgn_params["sigma"] = 0.4*rA
+	Wret_to_lgn_params["sigma"] = 0.25*rA
 	N = 25
 	random_seed = 19
-	Inp_params.update({"Nsur" : 2})
+	Inp_params.update({"Nsur" : 100})
 	Wret_to_lgn_params.update({"mean_eccentricity"	:	0.9,
 								"SD_eccentricity"	:	0.05,
 								"SD_size"			:	0.05,
 								"heterogeneity_type":	None#"independent"#
 								})
-	Wret_to_lgn = connectivity.Connectivity((N,N),(N,N),\
+	Wret_to_lgn,_ = connectivity.Connectivity((N,N),(N,N),\
 				  random_seed=random_seed).create_matrix(\
-				  Wret_to_lgn_params,"Gaussian") * Wret_to_lgn_params["gamma_ret"]
+				  Wret_to_lgn_params,"Gaussian")
+	Wret_to_lgn *= Wret_to_lgn_params["gamma_ret"]
 	lgn = []
 
 	Inp_params["onoff_rel_weight"] = 1.
@@ -422,7 +449,9 @@ if __name__=="__main__":
 		# rng_seed = Version*1000 + i
 		rng_seed = random_seed*1000 + i
 		one_stimulus = Inputs_lgn((N,N),1,rng_seed).create_lgn_input(\
-						Inp_params, "localized_waves_online", Wret_to_lgn)
+						Inp_params, "white_noise_online", Wret_to_lgn, expansion_timestep=0)
+		# one_stimulus = Inputs_lgn((N,N),1,rng_seed).create_lgn_input(\
+		# 				Inp_params, "gaussian_noise_online", Wret_to_lgn, expansion_timestep=0)
 		lgn.append( one_stimulus )
 	lgn = np.swapaxes(np.swapaxes(np.array(lgn),0,1),1,2)
 	print("lgn",lgn.shape)
@@ -532,22 +561,23 @@ if __name__=="__main__":
 	fig = plt.figure(figsize=(3*3,2*2))
 	plt.suptitle("Example convolved noise pattern")
 	ax = fig.add_subplot(231)
-	im=ax.imshow(lgn[0,:,:,0],interpolation="nearest",cmap="binary")
+	ft = np.abs(np.fft.fftshift(np.fft.fft2(lgn[0,:,:,0]-10)))
+	im=ax.imshow(ft,interpolation="nearest",cmap="binary")
 	plt.colorbar(im,ax=ax)
 	ax = fig.add_subplot(232)
 	im=ax.imshow(lgn[0,:,:,1],interpolation="nearest",cmap="binary")
 	plt.colorbar(im,ax=ax)
 	ax = fig.add_subplot(233)
 	# ax.plot(lgn[0,N//2,N//2,:],'-')
-	ax.plot(np.nanmean(lgn[1,:,:,:],axis=(0,1)),'--')
-	ax.plot(np.nanmean(lgn[0,:,:,:],axis=(0,1)),'--')
-	ax.set_ylim(bottom=0)
+	ax.plot(np.nanstd(lgn[1,:,:,:],axis=(0,1)),'--')
+	ax.plot(np.nanstd(lgn[0,:,:,:],axis=(0,1)),'--')
+	# ax.set_ylim(bottom=0)
 	ax = fig.add_subplot(234)
 	ax.plot(lgn[1,N//2,N//2,:],'-')
 	# ax.plot(np.nanmean(lgn[1,:,:,:],axis=(0,1)),'--')
 	ax.plot(lgn[0,N//2,N//2,:],'-')
 	# ax.plot(np.nanmean(lgn[0,:,:,:],axis=(0,1)),'--')
-	ax.set_ylim(bottom=0)
+	# ax.set_ylim(bottom=0)
 	ax = fig.add_subplot(235)
 	im=ax.imshow(lgn[1,:,:,0],interpolation="nearest",cmap="binary")
 	plt.colorbar(im,ax=ax)

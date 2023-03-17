@@ -26,49 +26,51 @@ def runjobs_oridevModel_Cluster():
 
 
 	iterator_dict = {
-					"sI" : np.array([0.25]), #([0.2,0.5,1.0,1.4]),
-					"rC" : np.array([0.2]), #([0.1,0.2,0.5,0.95]),
-					"rA" : np.array([0.2]), #"0.2 0.25",,
-					"betaP" : np.array([0.0004]), ##(default: 0.005),
+					"sI" : np.array([1.]),#np.array([0.3,0.7,1.,1.3]),
+					"rC" : np.array([0.25]),#np.array([0.15,0.25,0.35,0.5]),
+					"rA" : np.array([0.25]), #"0.2 0.25",,
+					"betaP" : np.array([0.0005]), ##(default: 0.005),
 
-					"mult_norm" : np.array(["homeostatic"]),	#default: x,
+					"mult_norm" : np.array(["x"]),	#default: x,
 					# "norm" : np.array(["x","xalpha","alpha"]),
 
-					"runtime" : np.array([600000]), #1000000,
-					# "avg_no_inp" : np.array([20]),
-					# "onoff_rel_weight" : np.array([2.]),
+					"runtime" : np.array([130000]), #1000000,
+					# "avg_no_inp" : np.array([50]),
+					# "onoff_rel_weight" : np.array([1.,2.]),#1.5,2., 3., 4.
 					# "off_bias_strength" : np.array([1.5,2.]),
 					# "off_bias_region_size" : np.array([0.5]),
 					
-					# "sim" : np.array([0]), ##(default: 1),
+					# "sim" : np.array(["dynamics"]), ##(default: 1),
 					# "patt_dur" : np.array([1]), ##(default: 2500),
 
 					## Recurrent layer
 					# "nonlin" : np.array(["powerlaw"]), ##(default: "rectifier")
 					# "gamma_lgn" : gamma_lgn,
-					"wrec" : np.array(["Gaussian2pop"]), ## default: Gaussian2pop,
-					"w4to4_ew" : np.array([1.05]),	## default: 0.95
+					"wrec" : np.array(["Gaussian"]), ## default: Gaussian2pop,
+					# "w4to4_ew" : np.array([1.05]),	## default: 0.95
 					# "density" : np.array([0.3,0.7]),
 					# "noise_rec" : np.array([0.2,0.4,0.6]),
 					# "ncluster" : np.array([3,5]),
 					# "Nvert" : np.array([1]),	##default: 1,
 					# "aEE" : np.array([8.]),
-					"rec_conn_het" : np.array(["independent"]),
-					"rec_conn_mean_ecc" : np.array([0.8]),
+					# "rec_conn_het" : np.array(["smooth"]),
+					# "rec_conn_mean_ecc" : np.array([0.8]),
 
 					## FF connections
-					# "Wret_to_LGN_profile" : np.array(["Gaussian"]), #default: Gaussian,
+					# "Wret_to_LGN_profile" : np.array(["Exponential"]), #default: Gaussian,
 					# "MH_strength" : np.array([1.]),
-					"arbor_profile" : ["heaviside"],
-					# "lgn_corr_het"	: np.array(["independent"]),
-					"connectivity_type" : np.array(["EI"]),
+					"arbor_profile" : ["gaussian"],
+					# "lgn_corr_het"	: np.array(["smooth"]),
+					# "connectivity_type" : np.array(["EI"]),
 					# "arbor_ampl" : np.array(["1. 1.2","1. 1.5","1. 2."]), #"1. 2.",
 
-					"saving_stepsize" : np.array([100]),
+					"saving_stepsize" : np.array([50]),
 
 					# "test_lowDsubset" : np.array([1]),
 
 					# "plasticity_rule" : np.array(["activity_based","activity_corr"])
+
+					"load_params_file" : np.array(["onepop_dynamic"]) # GaussInpCorr  antolik_etal
 					}
 
 
@@ -98,7 +100,7 @@ def runjobs_oridevModel_Cluster():
 	count=0;
 	for i,var_setting in enumerate(product(*var_list)):
 		time.sleep(0.2)
-		Version = 20+i#misc.get_version(data_dir + "layer4/",version=None,readonly=False)
+		Version = 1032+i#misc.get_version(data_dir + "layer4/",version=None,readonly=False)
 		print("Version={}".format(Version));sys.stdout.flush()
 		c1 = "{:s} --V {:.0f}".format(inpath,Version) + var_string.format(*var_setting)
 
@@ -135,7 +137,7 @@ def runjobs_oridevModel_Cluster():
 		elif current_user=="bh2757":
 			text_file.write("#SBATCH --account=theory \n")
 			text_file.write("#SBATCH --job-name="+jobname+ "\n")
-			text_file.write("#SBATCH -t 2-24:00  \n")## four days for 32x32
+			text_file.write("#SBATCH -t 0-12:00  \n")## four days for 32x32
 
 			# text_file.write("#SBATCH --mem=120gb \n")
 			# text_file.write("#SBATCH --gres=gpu:1 \n")
@@ -148,9 +150,10 @@ def runjobs_oridevModel_Cluster():
 			# text_file.write("source /rigel/home/bh2757/.bashrc \n")
 			text_file.write("source /burg/home/bh2757/.bashrc \n")
 			text_file.write("module load anaconda \n")
-			text_file.write("module load singularity \n")
+			# text_file.write("module load singularity \n")
 			# text_file.write("singularity exec tensorflow_latest.sif python " + c1 + " \n")
-			text_file.write("singularity exec intel-optimized-tensorflow_latest.sif python " + c1 + " \n")
+			# text_file.write("singularity exec intel-optimized-tensorflow_latest.sif python " + c1 + " \n")
+			text_file.write("python " + c1 + " \n")
 			text_file.write("echo $PATH  \n")
 			text_file.write("exit 0  \n")
 			text_file.close()

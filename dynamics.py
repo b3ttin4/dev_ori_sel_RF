@@ -6,7 +6,8 @@ from bettina.modeling.ori_dev_model import inputs#, image_dir
 
 def dynamics_twolayer(scan_func, y, t, dt, params_dict, **kwargs):
 	"""Layer 4 and Layer 23 dynamics with vertical units"""
-	nl = params_dict["nonlinearity"]
+	nl_4 = params_dict["nonlinearity_l4"]
+	nl_23 = params_dict["nonlinearity_l23"]
 	lgn = params_dict["lgn"]
 
 	##network params
@@ -44,36 +45,48 @@ def dynamics_twolayer(scan_func, y, t, dt, params_dict, **kwargs):
 	rhs_l4EI = kwargs["rhs_l4"]
 	rhs_l23EI = kwargs["rhs_l23"]
 
-
 	if params_dict["config_dict"]["Inp_params"]["simulate_activity"]=="dynamics":
 		l4_avg,theta_4 = 0,0
 		for kt in t:
 			l4 = scan_func(rhs_l4EI,l4,(kt,dt),N=N4**2*Nvert,inp_ff=lgn,inp_fb=l23,\
 							gamma_FF=gamma_lgn,gamma_rec=gamma_4, Wff_to_l=Wlgn_to_4,\
-							Wfb_to_l=W23to4,W_rec=W4to4, tau=tau, nl=nl)
+							Wfb_to_l=W23to4,W_rec=W4to4, tau=tau, nl=nl_4)
 
 			l23 = scan_func(rhs_l23EI,l23,(kt,dt),N=N23**2,inp_ff=l4,gamma_FF=1.,\
-						  gamma_rec=1.,Wff_to_l=W4to23,W_rec=W23to23,tau=tau,nl=nl)
+						  gamma_rec=1.,Wff_to_l=W4to23,W_rec=W23to23,tau=tau,nl=nl_23)
 
 	elif params_dict["config_dict"]["Inp_params"]["simulate_activity"]=="antolik_etal":
-		lgn_inp = tf.linalg.matvec(Wlgn_to_4[0,:,:],lgn[0,:]) +\
-			  	  tf.linalg.matvec(Wlgn_to_4[1,:,:],lgn[1,:])
+		lgn_inp = tf.linalg.matvec(Wlgn_to_4[0,:,:],lgn[0,:]*gamma_lgn[0,:]) +\
+			  	  tf.linalg.matvec(Wlgn_to_4[1,:,:],lgn[1,:]*gamma_lgn[1,:])
+		# print("lgn_inp",np.nanmax(lgn),np.nanmax(lgn_inp),np.nanmax(Wlgn_to_4))
 		if num_lgn_paths==4:
-			lgn_inp = tf.concat([lgn_inp,lgn_inp],0)
-		print("lgn_inp",lgn_inp.shape)
-		tmp = tf.linalg.matvec(W4to4,l4)
-		print("tmp",tmp.shape)
+			lgn_inp_I = tf.linalg.matvec(Wlgn_to_4[2,:,:],lgn[0,:]*gamma_lgn[2,:]) +\
+			  	 		tf.linalg.matvec(Wlgn_to_4[3,:,:],lgn[1,:]*gamma_lgn[3,:])
+			lgn_inp = tf.concat([lgn_inp,lgn_inp_I],0)
+
+		# tf.random.set_seed(2323)
+		# epsilon_4 = tf.random.normal(l4.shape,mean=0.0,stddev=1.0,dtype=tf.dtypes.float32)
 
 		lambd = 0.3
-		total_inp = tf.linalg.matvec(W4to4,l4)*gamma_4 + lgn_inp*gamma_lgn
-		epsilon = tf.random.normal(l4.shape,mean=0.0,stddev=1.0,dtype=tf.dtypes.float32)
-		l4_avg = total_inp*0.002 + params_dict["l4_avg"]*0.998
-		theta_4 = theta_4 + 0.02*(l4_avg-0.003)
-		l4 = l4 * (1-lambd) + lambd*nl(nu_4 * total_inp,theta_4) + 0.02 * epsilon
+		l4_avg = params_dict["config_dict"]["W4to4_params"]["l4_avg"]
+		for k in range(200):
+			total_inp = tf.linalg.matvec(W4to4,l4) + lgn_inp + \
+						tf.linalg.matvec(W23to4,l23)
+			epsilon = tf.random.normal(l4.shape,mean=0.0,stddev=1.0,dtype=tf.dtypes.float32)
+			
+			l4_new = l4 * (1-lambd) + lambd * nu_4 * nl_4(total_inp,theta_4)\
+					 + 0.02 * epsilon
+			l4_new = nl_4(l4_new,0)	#added to force L4 activity to be positive
+			# l4_new = nl_4(epsilon_4) * 0.1
+			l4_avg = l4_new*0.002 + l4_avg*0.998
+			theta_4 = theta_4 + 0.02*(l4_avg-0.09)
+			# print("l4",k,np.nanmin(l4_new),np.nanmax(l4_new),np.nanmin(l4_avg),np.nanmax(l4_avg),\
+			# 	np.nanmin(theta_4))
 
-		total_inp = tf.linalg.matvec(W4to23,l4)*gamma_4 + tf.linalg.matvec(W23to23,l23)*gamma_23
-		epsilon = tf.random.normal(l4.shape,mean=0.0,stddev=1.0,dtype=tf.dtypes.float32)
-		l23 = l23 * (1-lambd) + lambd*nl(nu_23 * total_inp) + 0.02 * epsilon
+			total_inp = tf.linalg.matvec(W4to23,l4) + tf.linalg.matvec(W23to23,l23)
+			epsilon = tf.random.normal(l23.shape,mean=0.0,stddev=1.0,dtype=tf.dtypes.float32)
+			l23_new = l23 * (1-lambd) + nu_23 * lambd*nl_23(total_inp) + 0.02 * epsilon
+			l4,l23 = l4_new,l23_new
 
 	else:
 		l4_avg,theta_4 = 0,0
@@ -97,7 +110,7 @@ def dynamics_twolayer(scan_func, y, t, dt, params_dict, **kwargs):
 		l23 *= gamma_lgn
 		l23 = np.clip(l23,0,np.nanmax(l23))
 
-	out = tf.concat([y[:s], l4, l23], axis=0)
+	out = tf.concat([y[:s], l4, l23, y[s+l4_size+l23_size:]], axis=0)
 
 	# dW = tf.zeros_like(Wlgn_to_4)
 	# dW = tf.reshape(dW, [s])
@@ -117,12 +130,12 @@ def dynamics_l4_sgl(y, t, params_dict, yt):
 	avg_no_inp = params_dict["config_dict"]["Inp_params"]["avg_no_inp"]
 
 
-	if params_dict["config_dict"]["nonlinearity"]=="rectifier":
+	if params_dict["config_dict"]["nonlinearity_l4"]=="rectifier":
 		def nl(x):
 			out = tf.where(tf.greater(x, 0), x, tf.zeros(tf.shape(x),dtype=tf.float32) )
 			# out = x
 			return out
-	elif params_dict["config_dict"]["nonlinearity"]=="linear":
+	elif params_dict["config_dict"]["nonlinearity_l4"]=="linear":
 		def nl(x):
 			out = x
 			return out
@@ -196,11 +209,11 @@ def lowD_GRF_l4(scan_func,y,t,dt,params_dict,**kwargs):
 	out = tf.concat([y[:s], l4], axis=0)
 	return out
 
+
 def dynamics_l4_new(scan_func,y,t,dt,params_dict,**kwargs):
 	"""only Layer 4 dynamics after number of stimuli with vertical units"""
-	nl = params_dict["config_dict"]["nonlinearity_l4"]
+	nl = params_dict["nonlinearity_l4"]
 	lgn = params_dict["lgn"]
-	print("nl",nl)
 
 	##network params
 	N4 = params_dict["N4"]
@@ -225,8 +238,8 @@ def dynamics_l4_new(scan_func,y,t,dt,params_dict,**kwargs):
 	I_crt = kwargs["I_crt"]
 	dt = params_dict["config_dict"]["dt"]
 
-
 	if params_dict["config_dict"]["Inp_params"]["simulate_activity"]=="dynamics":
+		l4_avg,theta_4 = 0,0
 		for kt in t:
 			l4 = scan_func(rhs_l4EI, l4, (kt,dt), N=N4*N4*Nvert, inp=lgn, gamma_FF=gamma_lgn,\
 						  gamma_rec=gamma_4, Wff_to_l=Wlgn_to_4, W_rec=W4to4, tau=tau, nl=nl)
@@ -239,157 +252,26 @@ def dynamics_l4_new(scan_func,y,t,dt,params_dict,**kwargs):
 		lambd = 0.3
 		total_inp = tf.linalg.matvec(W4to4,l4)*gamma_4 + lgn_inp*gamma_lgn
 		epsilon = tf.random.normal(l4.shape,mean=0.0,stddev=1.0,dtype=tf.dtypes.float32)
+
+		l4_avg = total_inp*0.002 + params_dict["config_dict"]["W4to4_params"]["l4_avg"]*0.998
+		theta_4 = theta_4 + 0.02*(l4_avg-0.003)
+
 		l4 = l4 * (1-lambd) + lambd*nl(nu_4*total_inp,theta_4) + 0.02 * epsilon
 
 	else:
-		l4 = tf.linalg.matvec(I_crt[:,:N4**2*Nvert], tf.linalg.matvec(Wlgn_to_4[0,:,:],lgn[0,:]) +\
-			  						 				 tf.linalg.matvec(Wlgn_to_4[1,:,:],lgn[1,:]))
+		l4_avg,theta_4 = 0,0
+		l4 = tf.linalg.matvec(I_crt[:,:N4**2*Nvert],tf.linalg.matvec(Wlgn_to_4[0,:,:],lgn[0,:]) +\
+			  						 				tf.linalg.matvec(Wlgn_to_4[1,:,:],lgn[1,:]))
 
 		if num_lgn_paths==4:
-			l4_toI = tf.linalg.matvec(I_crt[:,N4**2*Nvert:], tf.linalg.matvec(Wlgn_to_4[2,:,:],lgn[2,:]) +\
-			  						 				 		 tf.linalg.matvec(Wlgn_to_4[3,:,:],lgn[3,:]))
+			l4_toI = tf.linalg.matvec(I_crt[:,N4**2*Nvert:],tf.linalg.matvec(Wlgn_to_4[2,:,:],lgn[2,:]) +\
+			  						 				 		tf.linalg.matvec(Wlgn_to_4[3,:,:],lgn[3,:]))
 			l4 += l4_toI
 		l4 *= gamma_lgn
 		l4 = np.clip(l4,0,np.nanmax(l4))
 
-
-	# dl4 = rhs_l4EI(t, l4, N4*N4*Nvert, lgn, gamma_lgn, gamma_4, Wlgn_to_4, W4to4, tau, nl)
-
 	out = tf.concat([y[:s], l4], axis=0)
-	return out
-
-
-def dynamics_l4(y, t, params_dict, yt):
-	"""ff plasticity after number of stimuli with vertical units"""
-	N4 = params_dict["N4"]
-	Nlgn = params_dict["Nlgn"]
-	Nret = params_dict["Nret"]
-	Nvert = params_dict["Nvert"]
-
-	T_pd = params_dict["config_dict"]["Inp_params"]["pattern_duration"]
-	T_exp = params_dict["config_dict"]["Inp_params"]["expanse_time"]
-	avg_no_inp = params_dict["config_dict"]["Inp_params"]["avg_no_inp"]
-
-	if params_dict["config_dict"]["nonlinearity_l4"]=="rectifier":
-		def nl(x):
-			out = tf.where(tf.greater(x, 0), x, tf.zeros(tf.shape(x),dtype=tf.float32) )
-			# out = x
-			return out
-	elif params_dict["config_dict"]["nonlinearity_l4"]=="linear":
-		def nl(x):
-			out = x
-			return out
-
-	num_lgn_paths = 2	## default: only on/off input to E units
-	if params_dict["config_dict"]["Wlgn_to4_params"]["connectivity_type"]=="EI":
-		num_lgn_paths = 4	## separate on/off input to E and I units
-	if (int(tf.math.floor(t/T_pd))%2)==1:
-		lgn = tf.zeros((num_lgn_paths,Nlgn*Nlgn))
-	else:
-		# rng_seed = params_dict["Version"].numpy()*1000 + int(tf.math.floor(t/T_pd))
-		rng_seed = params_dict["config_dict"]["random_seed"]*1000 + int(tf.math.floor(t/T_pd))
-		lgn = inputs.Inputs_lgn((Nret,Nret),params_dict["Version"].numpy(),\
-			  rng_seed).create_lgn_input(params_dict["config_dict"]["Inp_params"],\
-			  "white_noise_online", params_dict["Wret_to_lgn"].numpy())
-		lgn = tf.convert_to_tensor(lgn,dtype=tf.float32)
-
-	arbor2 = params_dict["arbor2"]
-	Wlim = params_dict["config_dict"]["Wlgn_to4_params"]["Wlim"]
-
-	gamma_lgn = params_dict["config_dict"]["gamma_lgn"]
-	W4to4 = params_dict["W4to4"]
-	tau = params_dict["config_dict"]["tau"]
-	beta_P = params_dict["config_dict"]["Wlgn_to4_params"]["beta_P"]
-	beta_O = params_dict["config_dict"]["Wlgn_to4_params"]["beta_O"]
-	gamma_4 = params_dict["config_dict"]["gamma_4"]
-
-	s = 2 * N4*N4*Nlgn*Nlgn*Nvert
-	Wlgn_to_4 = y[:s]
-	Wlgn_to_4 = tf.reshape(Wlgn_to_4, [2, N4*N4*Nvert, Nlgn*Nlgn])
-
-	l4 = y[s:]
-	# print("dynamics_l4",y.shape,l4.shape,s)
-
-	# dl4 = rhs_l4(t, l4, lgn, gamma_lgn, gamma_4, Wlgn_to_4, W4to4, tau, nl)
-	dl4 = rhs_l4EI(t, l4, N4*N4*Nvert, lgn, gamma_lgn, gamma_4, Wlgn_to_4, W4to4, tau, nl)
-	## update ff weights after activity has converged for specific input
-	# if (t%T_pd)==(T_pd-1):
-	# 	notfrozen = tf.math.logical_and(Wlgn_to_4>0, Wlgn_to_4<Wlim)
-	# 	mask = tf.math.logical_and( notfrozen, arbor[tf.newaxis,:,:]>0 )
-	# 	mode = params_dict["normalisation_mode"]
-	# 	if mode=="xalpha":
-	# 		c_orth = params_dict["c_orth"]
-	# 		s_orth = params_dict["s_orth"]
-	# 	else:
-	# 		c_orth,s_orth = None,None
-	# 	dW = constrained_plasticity(t, l4, lgn, Wlgn_to_4, beta_P, beta_O, mask, arbor, arbor2\
-	# 		 mode, c_orth, s_orth)
-	# 	print("constrained_plasticity",t,dW.shape,np.nanmax(dW),np.nanmin(dW),\
-	# 			np.nanmax(l4),np.nanmax(lgn))
-
-	if ((((t+1)/T_pd)%avg_no_inp)==0 and t>0):
-		dW = 0
-		notfrozen = tf.math.logical_and(Wlgn_to_4>0, Wlgn_to_4<Wlim)
-		mask = tf.math.logical_and( notfrozen, arbor2>0 )
-		mode = params_dict["config_dict"]["Wlgn_to4_params"]["normalisation_mode"]
-		if mode=="xalpha":
-			c_orth = params_dict["c_orth"]
-			s_orth = params_dict["s_orth"]
-			# P_orth = params_dict["P_orth"]
-		else:
-			c_orth,s_orth = None,None
-			P_orth = None
-		for it in range(avg_no_inp):
-			## second lgn input is always zero, don't need to calc update
-			if ((int(tf.math.floor((t+1)/T_pd)) - it)%2)==0:
-				# print("CONTINUE",t,it,(t)/T_pd,it,((int(tf.math.floor((t+1.)/T_pd)) - it)%2))
-				continue
-			# lgn = params_dict["lgn"][...,int(tf.math.floor(t/T_pd))-it]
-			# rng_seed = params_dict["Version"].numpy()*1000 + int(tf.math.floor(t/T_pd)) - it
-			rng_seed = params_dict["config_dict"]["random_seed"]*1000 + int(tf.math.floor(t/T_pd)) - it
-			# print("rng_seed",rng_seed,it,t)
-			lgn = inputs.Inputs_lgn((Nret,Nret),params_dict["Version"].numpy(),\
-					rng_seed).create_lgn_input(params_dict["config_dict"]["Inp_params"],\
-					"white_noise_online", params_dict["Wret_to_lgn"].numpy())
-			lgn = tf.convert_to_tensor(lgn,dtype=tf.float32)
-			## take only activity from exc units for plasticity update
-			if it==0:
-				l4 = l4[:N4*N4*Nvert]
-			else:
-				# print("l4",yt.shape,it,rng_seed,s,N4*N4)
-				l4 = yt[-it,s:s+N4*N4*Nvert]
-
-			# if False:
-			# 	l4_filt = tf.linalg.matvec(W4to4[:N4**2,:N4**2], tf.linalg.matvec(Wlgn_to_4[0,:,:],lgn[0,:])) +\
-			# 		tf.linalg.matvec(W4to4[:N4**2,:N4**2], tf.linalg.matvec(Wlgn_to_4[1,:,:],lgn[1,:]))
-			# 	l4_filt = l4_filt * gamma_lgn
-			# 	import matplotlib.pyplot as plt
-			# 	fig = plt.figure()
-			# 	ax = fig.add_subplot(121)
-			# 	im=ax.imshow((l4_filt.numpy()).reshape(N4,N4),interpolation="nearest",cmap="binary")
-			# 	plt.colorbar(im,ax=ax)
-			# 	ax = fig.add_subplot(122)
-			# 	ax.set_title("ON,rng={}".format(rng_seed))
-			# 	im=ax.imshow((lgn.numpy())[0,:].reshape(Nlgn,Nlgn),interpolation="nearest",\
-			# 		cmap="binary")
-			# 	plt.colorbar(im,ax=ax)
-			# 	plt.savefig(image_dir +\
-			# 	 "layer4/tmp/v96_rA2.0_srec1.00_scc0.04_xalpha_AVG_test/activity_pattern/l4sim_t{}_it{}.pdf".format(t,it))
-			# 	plt.close(fig)
-			
-			# dW += constrained_plasticity(t, l4, lgn, Wlgn_to_4, beta_P, beta_O, mask,\
-			# 	arbor, arbor2,mode, c_orth, s_orth)
-			dW += unconstrained_plasticity(t, l4, lgn, Wlgn_to_4, beta_P, beta_O)
-
-		mask_fl = tf.cast(mask, tf.float32)
-		dW = constrain_plasticity_update(dW*arbor2,mask_fl,arbor2,mode,c_orth,s_orth)
-
-	else:
-		dW = tf.zeros_like(Wlgn_to_4)
-
-	dW = tf.reshape(dW, [s])
-	out = tf.concat([dW, dl4], axis=0)
-	return out
+	return out,l4_avg,theta_4
 
 
 def dynamics_Wonly(y, t, params_dict, yt):
@@ -563,7 +445,7 @@ def rhs_twolayer_l4EI_full_LGN_input(act,t,**kwargs):
 			gamma_ff * tf.linalg.matvec(Wff_to_l[3,:,:],inp_ff[3,:]) +\
 			gamma_rec * tf.linalg.matvec(W_rec[N:,:], act) +\
 						tf.linalg.matvec(Wfb_to_l[N:,:], inp_fb)
-	# print("argL4",np.nanmax(argE),np.nanmax(argI),tau)
+	# print("arg",arg_ff.shape,Wff_to_l.shape,argE.shape,argI.shape,act.shape)
 	return 1./tau * (nl( tf.concat([argE,argI], axis=0) ) - act)
 
 
@@ -582,7 +464,6 @@ def rhs_twolayer_l23EI(act,t,**kwargs):
 	# argI = gamma_rec * tf.linalg.matvec(W_rec[Nrec:,:], act)
 	argI = gamma_ff * tf.linalg.matvec(Wff_to_l[N:,:],inp_ff) +\
 		   gamma_rec * tf.linalg.matvec(W_rec[N:,:], act)
-	# print("argL23",np.nanmax(argE),np.nanmax(argI))
 	return 1./tau * (nl( tf.concat([argE,argI], axis=0) ) - act)
 
 
@@ -651,21 +532,16 @@ def constrain_plasticity_update_W4to23(y,dt,dW4to23,arbor,arbor2,Wlim,params_dic
 
 	"""normalise plasticity update via orthogonalised arbor vectors"""
 	dW4to23 = tf.reshape(dW4to23, [N23**2*2, N4*N4*Nvert*2])
-	print("dW4to23",np.nanmax(dW4to23))
 	delta_mask = dW4to23[arbor2>0] ## complete update incl multiplied by arbor
 	mask_fl = mask_fl[arbor2>0]	## boolean mask as type float
 
 	delta_mask -= tf.reduce_sum(s_orth*tf.linalg.matvec(c_orth,delta_mask)[:,None],axis=0)
-	print("delta_mask",np.nanmax(delta_mask))
 	delta_mask *= mask_fl
 	
 	delta2 = tf.scatter_nd(tf.where(arbor2>0),delta_mask,arbor2.shape)
 	delta2 = tf.reshape(delta2, [N23**2*2, N4*N4*Nvert*2])
-	# print("check norm",np.sum(delta2,axis=0),np.sum(delta2,axis=1))
 
-	print("W4to23, before",np.nanmax(W4to23),np.nanmin(W4to23))
 	W4to23 += dt*delta2
-	print("W4to23, after",np.nanmax(W4to23),np.nanmin(W4to23))
 	return W4to23
 
 
@@ -690,7 +566,6 @@ def constrained_plasticity(t,
 	xalpha	:	normalize first over alpha, then over x
 	"""
 	mask_fl = tf.cast(mask, tf.float32)
-	# print("arbor",(arbor.numpy()).size,np.sum(arbor.numpy()<0.001))
 	delta = unconstrained_plasticity(t,l4,inp,Wff,beta_P,beta_O) * arbor[tf.newaxis,:,:]# * mask_fl
 
 	### set filled = 1 since otherwise if all synapses to one cortical\
@@ -701,10 +576,6 @@ def constrained_plasticity(t,
 
 	constrained_delta = constrain_plasticity_update(delta,mask_fl,arbor2,mode,\
 													c_orth,s_orth)
-
-
-	# print("delta2",t.numpy(),np.nanmin(delta2),np.nanmax(delta2),\
-	# 	np.sum(delta2.numpy(),axis=1)[0,:5], np.sum(mask_fl==0) )
 	return constrained_delta
 	
 

@@ -22,13 +22,13 @@ parser.add_argument("--betaP", dest='beta_P', required=False, type=float, nargs=
 parser.add_argument("--gamma_lgn", dest='gamma_lgn', required=False, type=float)
 parser.add_argument("--runtime", dest='runtime', required=False, type=float)
 parser.add_argument("--sim", dest='simulate_activity',\
-					help="'dynamics','antolik_etal','steady_state'",required=False, type=str)
+					choices=['dynamics','antolik_etal','steady_state'],required=False, type=str)
 parser.add_argument("--patt_dur", dest='pattern_duration', required=False, type=int)
 parser.add_argument("--avg_no_inp", dest='avg_no_inp', required=False, type=int)
 
 ## recurrent network layout
-parser.add_argument("--nonlin", dest='nonlinearity', required=False, type=str,\
-					help=" 'rectifier', 'linear' or 'powerlaw' ")
+parser.add_argument("--nonlin", dest='nonlinearity_l4', required=False, type=str,\
+					choices=[ 'rectifier', 'linear', 'powerlaw'])
 parser.add_argument("--wrec", dest='Wrec_mode', required=False, type=str)
 parser.add_argument("--w4to4_ew", dest='w4to4_ew', required=False, type=float)
 parser.add_argument("--w4to23", dest='W4to23_mode', required=False, type=str)
@@ -68,9 +68,6 @@ parser.add_argument("--Wlim", dest='Wlim', required=False, type=float)
 parser.add_argument("--expanse_time", dest='expanse_time', required=False, type=int)
 
 
-
-
-
 ## ARBOR variations
 parser.add_argument("--arbor_profile",dest='arbor_profile',required=False,type=str,\
 					default=None,nargs="+")
@@ -78,7 +75,8 @@ parser.add_argument("--arbor_ampl",dest='arbor_ampl',required=False,type=float,d
 					nargs="+")
 
 
-parser.add_argument("--plasticity_rule", dest="plasticity_rule",required=False,type=str)
+parser.add_argument("--plasticity_rule", dest="plasticity_rule",choices=["activity_based",\
+					"activity_corr"],required=False,type=str)
 parser.add_argument("--test_lowDsubset", dest='test_lowDsubset',required=False,type=bool)
 
 ## saving tools
@@ -91,6 +89,10 @@ parser.add_argument("--index", dest='idx', help="specifying run number (either\
 parser.add_argument("--cl", dest='load_external_from', help="specify where data lies\
 					(e.g. None, aws, habanero)", required=False,  nargs="*", default=[""])
 
+
+parser.add_argument("--load_params_file",dest="load_params_file",choices=["antolik_etal",\
+					"default","GaussInpCorr","norecMH","onepop","twopop","onepop_dynamic"],\
+					required=False,type=str)
 
 args = parser.parse_args()
 

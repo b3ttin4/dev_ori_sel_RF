@@ -5,25 +5,24 @@ import os
 home_dir = os.environ["HOME"]
 current_user = os.environ["USER"]
 if current_user=="bettina":
-	base_dir = home_dir + "/physics/columbia/projects/ori_dev_model/"
+	base_dir = os.path.join(home_dir, "physics/columbia/projects/ori_dev_model/")
 elif current_user=="hein":
-	base_dir = home_dir + "/ori_dev_model/"
+	base_dir = os.path.join(home_dir, "ori_dev_model/")
 elif current_user=="bh2757":
 	cwd = os.getcwd()
 	# base_dir = "/rigel/theory/users/bh2757/columbia/projects/ori_dev_model/"
 	# base_dir = "/burg/theory/users/bh2757/columbia/projects/ori_dev_model/"
-	base_dir = cwd + "/projects/ori_dev_model/"
+	# base_dir = cwd + "/projects/ori_dev_model/"
+	base_dir = os.path.join(cwd,"projects/ori_dev_model")
 elif current_user=="ubuntu":
-	base_dir = "/home/ubuntu/ori_dev_model/"
-data_dir = base_dir+'data/'
-image_dir = base_dir+'image/'
-movie_dir = base_dir+'movie/'
+	base_dir = "/home/ubuntu/ori_dev_model"
+data_dir = os.path.join(base_dir,'data/')
+image_dir = os.path.join(base_dir,'image/')
+movie_dir = os.path.join(base_dir,'movie/')
 
 
 ## ============================ Layer 2/3 =====================================
 Ninp = 30
-N23 = 30
-
 Inp_params = {
 				"ndim"		:	25,
 				"radius"	:	Ninp/10.,#number of wavelength in pattern
@@ -204,6 +203,7 @@ W4to4_params = {
 
 				# plasticity params
 				"nu_4"				:	3.,
+				"beta_P"			:	0.1,
 				"learning_rate"		:	0.5,
 				"plasticity_rule"	:	None,
 				"constraint_mode"	:	None,
@@ -243,6 +243,7 @@ W23_params = {
 
 				# plasticity params
 				"nu_23"				:	1.,
+				"beta_P"			:	0.1,
 				"learning_rate"		:	0.2,
 				"plasticity_rule"	:	None,
 				"constraint_mode"	:	None,
@@ -279,6 +280,7 @@ W4to23_params = {
 
 				# plasticity params
 				"gain"				:	1.,
+				"beta_P"			:	0.1,
 				"learning_rate"		:	0.2,
 				"plasticity_rule"	:	None,
 				"constraint_mode"	:	None,
@@ -335,21 +337,17 @@ config_dict = {
 				"tau"					:	1.,\
 				"num_lgn_paths"			:	2 if Wlgn_to4_params["connectivity_type"]=="E" else 4,\
 
-				# "beta_P"				:	0.005,\
 				"gamma_lgn"				:	0.9,#0.9,\
 				"gamma_4"				:	1.0,\
-				# "beta_O"				:	0.001,\
-				# "beta_4to23"			:	0.01,\
+				"gamma_23"				:	1.0,\
 				"learning_rate_decay_const"	:	160000.,
 
 				"saving_stepsize"		:	10,\
 				
-				# "normalisation_mode"	:	normalisation_mode,\
-				# "multiplicative_normalisation" : "x",\
 				"plasticity_rule"		:	"activity_based",#"activity_corr"
 
 				"random_seed"			:	random_seed,\
-				"nonlinearity_l4"			:	"rectifier",#"rectifier"#"linear"
+				"nonlinearity_l4"		:	"rectifier",#"rectifier"#"linear"
 				"nonlinearity_l23"		:	"rectifier",
 				"integrator"			:	"Euler",#"RK4"
 				"comments"				:	"  ",\

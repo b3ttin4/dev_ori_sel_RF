@@ -11,6 +11,7 @@ def distance(delta):
 	signs = np.sign(delta)
 	return np.where(np.abs(delta) > 0.5, -signs*(1 - np.abs(delta)), delta)
 
+
 def linear_arbor_falloff(d,radius,inner_radius):
 	outer_radius = np.nanmin(d[d>radius])
 	arbor = np.zeros_like(d,dtype=float)
@@ -21,10 +22,11 @@ def linear_arbor_falloff(d,radius,inner_radius):
 	return arbor
 
 
-
-
 def gaussian(x,y,s):
 	return np.exp(-(x**2+y**2)/2./s**2)#1./2.*np.pi/s**2*
+
+def exponential(x,y,s):
+	return np.exp(-np.sqrt(x**2+y**2)/s)
 
 
 def gaussian_filter(ar,sigma):
@@ -54,11 +56,8 @@ class Connectivity:
 		if isinstance(Nvert,int):
 			Nvert = (Nvert,Nvert)
 		self.Nvert = Nvert
-		# if rng is not None:
-		# 	self.rng = rng
-		# else:
-		# 	self.rng = np.random.RandomState(20200205)
 		self.rng = np.random.RandomState(random_seed*90)
+		# self.rng = np.random.default_rng(random_seed*90)
 		self.full_output = full_output
 		self.full_output_dict = {}
 		
@@ -105,11 +104,17 @@ class Connectivity:
 		xdelta = distance(xto[:,:,None,None]-xfrom[None,None,:,:])
 		ydelta = distance(yto[:,:,None,None]-yfrom[None,None,:,:])
 
+		arbor_params = {}
+		if conn_params.get("ret_scatter",False):
+			arbor_params = {"ret_scatter" : conn_params["ret_scatter"]}
+
 		if "r_A" in kwargs:
-			if kwargs["r_A"] is not None:
+			if isinstance(kwargs["r_A"],float):
 				profile_A = kwargs.get("profile_A", "heaviside")
-				arbor = self.create_arbor(radius=kwargs["r_A"],profile=profile_A)
+				arbor = self.create_arbor(radius=kwargs["r_A"],profile=profile_A,\
+						arbor_params=arbor_params)
 				arbor = arbor.reshape(xdelta.shape)
+				print("CHECK radius",kwargs["r_A"])
 			else:
 				arbor = None
 		else:
@@ -149,17 +154,31 @@ class Connectivity:
 				ydelta = (xdelta*sin_theta + ydelta*cos_theta) * size_field_y[None,None,:,:]
 				xdelta = xdelta2
 
+		if arbor_params.get("ret_scatter",False):
+			scatter_ampl = 0.25
+			if isinstance(arbor_params["ret_scatter"],float):
+				scatter_ampl = arbor_params["ret_scatter"]
+			rng = np.random.default_rng(2001)
+			x_scat = scatter_ampl*rng.standard_normal(self.to_size)
+			y_scat = scatter_ampl*rng.standard_normal(self.to_size)
+			xdelta = distance(xto[:,:,None,None]-xfrom[None,None,:,:]-x_scat[:,:,None,None])
+			ydelta = distance(yto[:,:,None,None]-yfrom[None,None,:,:]-y_scat[:,:,None,None])
+
 
 		if profile=="linear":
 			pairwise_distance = np.sqrt(xdelta**2 + ydelta**2)
 			conn_matrix = pairwise_distance
 		
 		elif profile in ("Gaussian","Gaussian_broadOFF"):
-			## TODO: add heterogeneity
 			sigma = conn_params["sigma"]
 			ampl = conn_params["ampl"]
-			print("sigma",sigma,ampl)
 			noise_str = conn_params["noise"]
+
+			# noise_str = 0
+			# print("")
+			# print("UNCOMMENT L 176 in connectivity.py")
+			# print("")
+			
 			if noise_str>0:
 				noise_field = self.rng.uniform(1-noise_str,1,xdelta.size).reshape(xdelta.shape)
 			else:
@@ -168,21 +187,37 @@ class Connectivity:
 			disc_gaussian *= noise_field
 			## norm_factor is uniform
 			# norm_factor = np.sum(disc_gaussian,axis=(0,1))[None,None,:,:]
+			
 			if arbor is not None:
 				disc_gaussian[np.logical_not(arbor)] = 0.
+				print("arbor",arbor.shape)
 			norm_factor = np.sum(disc_gaussian,axis=(2,3))[:,:,None,None]
 			conn_matrix = ampl * disc_gaussian / norm_factor
-
+			
+		elif profile in ("Exponential",):
+			sigma = conn_params["sigma"]
+			ampl = conn_params["ampl"]
+			noise_str = conn_params["noise"]
+			if noise_str>0:
+				noise_field = self.rng.uniform(1-noise_str,1,xdelta.size).reshape(xdelta.shape)
+			else:
+				noise_field = 1.
+			disc_exponential = exponential(xdelta,ydelta,sigma)
+			disc_exponential *= noise_field
+			
+			if arbor is not None:
+				disc_exponential[np.logical_not(arbor)] = 0.
+			norm_factor = np.sum(disc_exponential,axis=(2,3))[:,:,None,None]
+			conn_matrix = ampl * disc_exponential / norm_factor
 
 		elif profile=="Gaussian_inv":
 			disc_gaussian = self.create_matrix(conn_params, profile="Gaussian")
 			disc_gaussian /= np.nanmax(disc_gaussian)
-			disc_gaussian = disc_gaussian.reshape(np.prod(self.to_size)*self.Nvert[1],\
-										np.prod(self.from_size)*self.Nvert[0])
-			conn_matrix = disc_gaussian - np.diag(np.ones(np.prod(self.from_size)*self.Nvert[0]))
-			# sumc = np.sum(conn_matrix,axis=0)
-			# print("sumc",sumc.size,np.sum(np.isfinite(sumc)),\
-			# 	np.nanmin(sumc),np.nanmax(sumc))
+			conn_matrix = disc_gaussian -\
+			 np.diag(np.ones(np.prod(self.from_size)*self.Nvert[0])).reshape(disc_gaussian)
+
+			if arbor is not None:
+				conn_matrix[np.logical_not(arbor)] = 0.
 			conn_matrix =  conn_matrix / np.sum(conn_matrix,axis=0)[None,:]
 			# print("conn_matrix",conn_matrix.size,np.sum(np.isfinite(conn_matrix)),\
 			# 	np.nanmin(conn_matrix),np.nanmax(conn_matrix))
@@ -211,9 +246,10 @@ class Connectivity:
 
 			conn_matrix = conn_matrix.reshape(xdelta.shape)
 			conn_matrix *= noise_field
-			norm_factor = np.sum(conn_matrix,axis=(0,1))[None,None,:,:]
+			if arbor is not None:
+				conn_matrix[np.logical_not(arbor)] = 0.
+			norm_factor = np.sum(conn_matrix,axis=(2,3))[None,None,:,:]
 			conn_matrix = ampl * conn_matrix / norm_factor
-
 
 		elif profile=="Gaussian_sparse":
 			## connectivity not really clustered
@@ -253,10 +289,11 @@ class Connectivity:
 			conn_matrix = conn_matrix.reshape(xdelta.shape)
 			conn_matrix *= noise_field
 			# norm_factor = np.sum(conn_matrix,axis=(0,1))[None,None,:,:]
+			if arbor is not None:
+				conn_matrix[np.logical_not(arbor)] = 0.
 			norm_factor = np.sum(conn_matrix,axis=(2,3))[:,:,None,None]
 			conn_matrix = ampl * conn_matrix / norm_factor
 			# print("norm_factor",np.sum(norm_factor==0),conn_matrix.shape)
-
 
 		elif profile=="Gaussian_prob_density":
 			## connectivity not really clustered
@@ -292,6 +329,8 @@ class Connectivity:
 			conn_matrix = conn_matrix.reshape(xdelta.shape)
 			conn_matrix *= noise_field
 			# norm_factor = np.sum(conn_matrix,axis=(0,1))[None,None,:,:]
+			if arbor is not None:
+				conn_matrix[np.logical_not(arbor)] = 0.
 			norm_factor = np.sum(conn_matrix,axis=(2,3))[:,:,None,None]
 			conn_matrix = ampl * conn_matrix / norm_factor
 			# print("norm_factor",np.sum(norm_factor==0),conn_matrix.shape)
@@ -332,6 +371,8 @@ class Connectivity:
 			conn_matrix = conn_matrix.reshape(xdelta.shape)
 			conn_matrix *= noise_field
 			# norm_factor = np.sum(conn_matrix,axis=(0,1))[None,None,:,:]
+			if arbor is not None:
+				conn_matrix[np.logical_not(arbor)] = 0.
 			norm_factor = np.sum(conn_matrix,axis=(2,3))[:,:,None,None]
 			norm_factor[norm_factor==0] = 1.
 			conn_matrix = ampl * conn_matrix / norm_factor
@@ -351,8 +392,12 @@ class Connectivity:
 				noise_field1 = 1.
 				noise_field2 = 1.
 			disc_gaussian1 = gaussian(xdelta,ydelta,sigma1) / np.prod(self.from_size) / self.Nvert[0]
+			if arbor is not None:
+				disc_gaussian1[np.logical_not(arbor)] = 0.
 			disc_gaussian1 /= np.sum(disc_gaussian1,axis=(0,1))[None,None,:,:]
 			disc_gaussian2 = gaussian(xdelta,ydelta,sigma2) / np.prod(self.from_size) / self.Nvert[0]
+			if arbor is not None:
+				disc_gaussian2[np.logical_not(arbor)] = 0.
 			disc_gaussian2 /= np.sum(disc_gaussian2,axis=(0,1))[None,None,:,:]
 			conn_matrix = ampl1 * noise_field1 * disc_gaussian1 -\
 						  ampl2 * noise_field2 * disc_gaussian2
@@ -373,7 +418,7 @@ class Connectivity:
 			disc_gaussian = ampl * disc_gaussian / norm_factor
 
 			## Long-range interactions
-			dist_dep_gauss = gaussian(xdelta,ydelta,0.2) / np.prod(self.from_size) / self.Nvert[0]
+			dist_dep_gauss = gaussian(xdelta,ydelta,0.5) / np.prod(self.from_size) / self.Nvert[0]
 			ecp, sigma_ecp = self.gen_ecp(xfrom, yfrom, conn_params)
 			sigmaz = 0.5*np.nanmean(np.abs(ecp))
 			deltaz = ecp[:,:,None,None] - ecp[None,None,:,:]
@@ -382,22 +427,30 @@ class Connectivity:
 			zconn[np.sqrt(xdelta**2+ydelta**2)<(sigma*2.)] = 0.
 			zconn /= np.sum(zconn,axis=(2,3))[:,:,None,None]
 
-			conn_matrix = (disc_gaussian + 0.05*zconn)
+			conn_matrix = (disc_gaussian + 5*zconn)
+			if arbor is not None:
+				conn_matrix[np.logical_not(arbor)] = 0.
 			# conn_matrix /= np.sum((conn_matrix),axis=(2,3))[:,:,None,None]
 			# if arbor is not None:
 			# 	conn_matrix[np.logical_not(arbor)] = 0.
 
-		elif profile in ("random_delta","initialize"):
+		elif profile in ("random_delta","initialize","initialize2"):
 			s_noise = conn_params["s_noise"]
-			conn_matrix = self.rng.uniform(1-s_noise,1+s_noise,xdelta.size)
-			conn_matrix = conn_matrix.reshape(xdelta.shape)
+			if profile=="initialize2":
+				disc_gaussian = gaussian(xdelta,ydelta,0.2)
+				noise_field = self.rng.uniform(1-s_noise,1+s_noise,xdelta.size)
+				conn_matrix = disc_gaussian * noise_field.reshape(disc_gaussian.shape)
+			else:
+				conn_matrix = self.rng.uniform(1-s_noise,1+s_noise,xdelta.size)
+				conn_matrix = conn_matrix.reshape(xdelta.shape)
+			
 			if arbor is not None:
 				conn_matrix[np.logical_not(arbor)] = 0.
-			if profile=="initialize":
+			if profile in ("initialize2","initialize"):
 				norm_factor = np.sum(conn_matrix,axis=(2,3))[:,:,None,None]
 				conn_matrix /= norm_factor
+			
 			conn_matrix *= conn_params["ampl"]
-
 
 		elif profile=="Gabor":
 			sigma = conn_params["sigma"]
@@ -483,11 +536,18 @@ class Connectivity:
 
 		self.conn_matrix = conn_matrix.reshape(np.prod(self.to_size)*self.Nvert[1],\
 												np.prod(self.from_size)*self.Nvert[0])
-				
-		if self.full_output:
-			return self.conn_matrix, self.full_output_dict
+		
+		if arbor is not None:
+			self.arbor = arbor.reshape(np.prod(self.to_size)*self.Nvert[1],\
+										np.prod(self.from_size)*self.Nvert[0])
 		else:
-			return self.conn_matrix
+			self.arbor = None
+		
+
+		if self.full_output:
+			return self.conn_matrix, (self.full_output_dict, self.arbor)
+		else:
+			return self.conn_matrix, self.arbor
 	
 	def create_arbor(self, radius, profile="heaviside", arbor_params={}):
 		"""
@@ -530,11 +590,22 @@ class Connectivity:
 				xdelta2 = (xdelta*cos_theta - ydelta*sin_theta) * size_field_x
 				ydelta = (xdelta*sin_theta + ydelta*cos_theta) * size_field_y
 				xdelta = xdelta2
-				
+		
+		if arbor_params.get("ret_scatter",False):
+			rng = np.random.default_rng(2001)
+			scatter_ampl = 0.25
+			if isinstance(arbor_params["ret_scatter"],float):
+				scatter_ampl = arbor_params["ret_scatter"]
+			x_scat = scatter_ampl*rng.standard_normal(self.to_size)
+			y_scat = scatter_ampl*rng.standard_normal(self.to_size)
+			xdelta = distance(xto[:,:,None,None]-xfrom[None,None,:,:]-x_scat[:,:,None,None])
+			ydelta = distance(yto[:,:,None,None]-yfrom[None,None,:,:]-y_scat[:,:,None,None])
+
 
 		d = np.sqrt(xdelta**2 + ydelta**2)		## absolute distance |vec(x)-vec(y)|
 		d = d.reshape(np.prod(self.to_size)*self.Nvert[1],\
 					  np.prod(self.from_size)*self.Nvert[0])
+
 		if profile=="heaviside":
 			arbor = (np.around(d,2)<=radius).astype(float)
 
@@ -549,8 +620,8 @@ class Connectivity:
 
 			delta_bin = 0.05
 			i,j = np.meshgrid(np.arange(-(self.to_size[0]//2),self.to_size[0]//2+delta_bin,\
-				delta_bin),\
-				np.arange(-(self.from_size[0]//2),self.from_size[0]//2+delta_bin,delta_bin))
+					delta_bin),\
+					np.arange(-(self.from_size[0]//2),self.from_size[0]//2+delta_bin,delta_bin))
 			delta1 = np.sqrt(i**2+j**2)
 			delta2 = np.sqrt((d_unique[:,None,None]-i[None,:,:])**2+(j[None,:,:])**2)
 			circles = (delta1 < radius)[None,:,:]*(delta2 < (radius*cA))
@@ -568,7 +639,7 @@ class Connectivity:
 
 		else:
 			print("Specified arbor profile ({}) not found. Use one of the following: \
-				'heaviside', 'gaussian', 'overlap, 'linear_falloff'.".format(profile))
+				  'heaviside', 'gaussian', 'overlap, 'linear_falloff'.".format(profile))
 
 		return arbor
 
@@ -606,48 +677,48 @@ class Connectivity_2pop():
 			conn_params["density"] = 1.
 		if not "ncluster" in conn_params.keys():
 			conn_params["ncluster"] = 1
-		if "Gaussian" in profile_conn:
-			profile_conn_EE,profile_conn_EI,profile_conn_IE,profile_conn_II = \
-				profile_conn,profile_conn,profile_conn,profile_conn
-		elif profile_conn=="zmodel":
+		profile_conn_EE,profile_conn_EI,profile_conn_IE,profile_conn_II = \
+			profile_conn,profile_conn,profile_conn,profile_conn
+		if profile_conn=="zmodel":
 			profile_conn_EE = "zmodel"
 			profile_conn_IE = "zmodel"
 			profile_conn_EI,profile_conn_II = ["Gaussian"]*2
 
-
+		rA_E = conn_params["rA_E"]
+		rA_I = conn_params["rA_I"]
 		W4to4_params_EE = copy(conn_params)
 		W4to4_params_EE.update({"sigma" : conn_params["sigma_EE"] * sigma_rec,\
 						 		"ampl" : conn_params["aEE"], "type" : "EE"})
-		conn_EE = Connectivity(self.from_Ne, self.to_Ne,\
+		conn_EE,arb_EE = Connectivity(self.from_Ne, self.to_Ne,\
 				 self.random_seed, self.Nvert,full_output=self.full_output\
-				 ).create_matrix(W4to4_params_EE, profile_conn_EE, **kwargs)
+				 ).create_matrix(W4to4_params_EE, profile_conn_EE, r_A=rA_E, **kwargs)
 
 		W4to4_params_IE = copy(conn_params)
 		W4to4_params_IE.update({"sigma" : conn_params["sigma_IE"] * sigma_rec,\
 						 		"ampl" : conn_params["aIE"], "type" : "IE"})
-		conn_IE = Connectivity(self.from_Ne, self.to_Ni,\
+		conn_IE,arb_IE = Connectivity(self.from_Ne, self.to_Ni,\
 		 			self.random_seed, self.Nvert,full_output=self.full_output\
-		 			).create_matrix(W4to4_params_IE, profile_conn_IE, **kwargs)
+		 			).create_matrix(W4to4_params_IE, profile_conn_IE, r_A=rA_E, **kwargs)
 
 		W4to4_params_EI = copy(conn_params)
 		W4to4_params_EI.update({"sigma" : conn_params["sigma_EI"] * sigma_rec,\
 								 "ampl" : conn_params["aEI"], "type" : "EI"})
-		conn_EI = Connectivity(self.from_Ni, self.to_Ne,\
+		conn_EI,arb_EI = Connectivity(self.from_Ni, self.to_Ne,\
 				 self.random_seed, self.Nvert,full_output=self.full_output\
-				 ).create_matrix(W4to4_params_EI, profile_conn_EI, **kwargs)
+				 ).create_matrix(W4to4_params_EI, profile_conn_EI, r_A=rA_I, **kwargs)
 
 		W4to4_params_II = copy(conn_params)
 		W4to4_params_II.update({"sigma" : conn_params["sigma_II"] * sigma_rec,\
 						 		"ampl" : conn_params["aII"], "type" : "II"})
-		conn_II = Connectivity(self.from_Ni, self.to_Ni,\
+		conn_II,arb_II = Connectivity(self.from_Ni, self.to_Ni,\
 		 			self.random_seed, self.Nvert,full_output=self.full_output\
-		 			).create_matrix(W4to4_params_II, profile_conn_II, **kwargs)
+		 			).create_matrix(W4to4_params_II, profile_conn_II, r_A=rA_I, **kwargs)
 
 		if self.full_output:
-			conn_EE,output_dict_EE = conn_EE
-			conn_IE,output_dict_IE = conn_IE
-			conn_EI,output_dict_EI = conn_EI
-			conn_II,output_dict_II = conn_II
+			output_dict_EE,arb_EE = arb_EE
+			output_dict_IE,arb_IE = arb_IE
+			output_dict_EI,arb_EI = arb_EI
+			output_dict_II,arb_II = arb_II
 
 			self.full_output_dict.update({"EE" : output_dict_EE,
 										  "IE" : output_dict_IE,
@@ -656,6 +727,7 @@ class Connectivity_2pop():
 		print("")
 		print("CHECK CONN VALS",profile_conn,np.nanmax(conn_EE),np.nanmax(conn_IE),\
 				np.nanmax(conn_EI),np.nanmax(conn_II))
+		
 		from_Ne_total = np.prod(self.from_Ne) * self.Nvert[0]
 		from_Ni_total = np.prod(self.from_Ni) * self.Nvert[0]
 		to_Ne_total = np.prod(self.to_Ne) * self.Nvert[1]
@@ -666,6 +738,7 @@ class Connectivity_2pop():
 		Wrec[to_Ne_total:,:from_Ne_total] = conn_IE
 		Wrec[to_Ne_total:,from_Ne_total:] = -conn_II
 
+		# normalise conn matrix if the maximal real eigenvalue is given
 		if Wrec.shape[0]==Wrec.shape[1]:
 			ew,_ = linalg.eig(Wrec,right=True)
 			print("orig max ew",np.nanmax(np.real(ew)),max_ew)
@@ -686,10 +759,19 @@ class Connectivity_2pop():
 			print('svd,Wrec',np.sqrt(svds[:5]))
 		print("")
 		
-		if self.full_output:
-			return Wrec,self.full_output_dict
+		if arb_EE is None:
+			arbor = None
 		else:
-			return Wrec
+			arbor = np.zeros((to_Ne_total+to_Ni_total,from_Ne_total+from_Ni_total))
+			arbor[:to_Ne_total,:from_Ne_total] = arb_EE
+			arbor[:to_Ne_total,from_Ne_total:] = arb_EI
+			arbor[to_Ne_total:,:from_Ne_total] = arb_IE
+			arbor[to_Ne_total:,from_Ne_total:] = arb_II
+
+		if self.full_output:
+			return Wrec, self.full_output_dict, arbor
+		else:
+			return Wrec, arbor
 
 
 		
@@ -699,7 +781,7 @@ if __name__=="__main__":
 	from bettina.ferretV1 import hierarchical_clustering_correlation as hcc
 
 
-	N = 20
+	N = 25
 	Nvert = 1
 	fromsize = (N,N)
 	tosize = (N,N)
@@ -710,14 +792,14 @@ if __name__=="__main__":
 		grid = np.linspace(0,1,N,endpoint=False)
 		xto,yto = np.meshgrid(grid,grid)
 		conn_params = {"rng" : np.random.RandomState(20200205)}
-		ecp,sigma = gen_ecp(xto, yto, conn_params)
+		ecp,sigma = conn.gen_ecp(xto, yto, conn_params)
 		thetas = np.angle(ecp,deg=False)*0.5
 		
 		## smooth phases generation
 		grid = np.linspace(0,1,N,endpoint=False)
 		xto,yto = np.meshgrid(grid,grid)
 		conn_params = {"rng" : np.random.RandomState(20200205), "kc" : 2., "n" : 1}
-		ecp,sigma = gen_ecp(xto, yto, conn_params)
+		ecp,sigma = conn.gen_ecp(xto, yto, conn_params)
 		pref_phase = np.angle(ecp,deg=False)
 
 		np.random.seed(12)
@@ -776,7 +858,7 @@ if __name__=="__main__":
 		exit()
 
 	## test z-model connectivity
-	if False:
+	if True:
 		N4 = N
 		W4to4_params.update({"kc"	:	3.,
 							 "n"	:	30,
@@ -784,8 +866,11 @@ if __name__=="__main__":
 							 "sigma":	0.3,
 							 "ampl"	:	1.,
 							})
-		W4 = Connectivity((N4,N4), (N4,N4), random_seed=12345, Nvert=1)
-		conn = W4.create_matrix(W4to4_params,profile="zmodel")
+		W4 = Connectivity_2pop((N4,N4), (N4,N4), (N4,N4), (N4,N4),random_seed=12345, Nvert=Nvert)
+		W4to4_params["sigma_factor"] = 0.5
+		W4to4_params["rA_E"] = None
+		W4to4_params["rA_I"] = None
+		conn,_ = W4.create_matrix_2pop(W4to4_params,"zmodel2pop")
 
 		fig = plt.figure()
 		ax = fig.add_subplot(131)
@@ -793,14 +878,51 @@ if __name__=="__main__":
 						cmap="binary")
 		plt.colorbar(im,ax=ax)
 		ax = fig.add_subplot(132)
+		im=ax.imshow(conn[:N4**2*Nvert,N4//2+N4**2//2+4+N4**2].reshape(N4,N4*Nvert),interpolation="nearest",\
+						cmap="binary")
+		plt.colorbar(im,ax=ax)
+		ax = fig.add_subplot(133)
 		im=ax.imshow(conn[N4//2+N4**2//2-2,:N4**2*Nvert].reshape(N4,N4*Nvert),interpolation="nearest",\
 						cmap="binary")
 		plt.colorbar(im,ax=ax)
+
+		eigvals,eigvec = linalg.eig(conn)
+		eigvec = eigvec[:,np.argsort(np.real(eigvals))[::-1]]
+		eigvals_sorted = np.sort(np.real(eigvals))[::-1]
+		print("max,min ev",eigvals_sorted[0],eigvals_sorted[-1])
+		fig = plt.figure(figsize=(18,5))
+		fig.suptitle("Max ev={:.2f}, min ev={:.5f}".format(eigvals_sorted[0],eigvals_sorted[-1]))
+		ax = fig.add_subplot(131)
+		ax.plot(eigvals_sorted,'-k')
+		ax.set_xlabel("Index")
+		ax.set_ylabel("Eigenvalues")
+		ax = fig.add_subplot(132)
+		ax.plot(eigvals_sorted[:20],'-k')
+		ax.set_xlabel("Index")
+		ax.set_ylabel("Eigenvalues")
+		ax = fig.add_subplot(133)
+		ax.plot(np.real(eigvals),np.imag(eigvals),"ok",alpha=0.4)
+		ax.set_xlabel("real part eigval")
+		ax.set_ylabel("imaginary part eigval")
+
+		nrow,ncol = 2,10
+		fig = plt.figure(figsize=(6*ncol,nrow*5))
+		for jcol in range(ncol):
+			ax = fig.add_subplot(nrow,ncol,1+jcol)
+			ax.set_title("Real EV {}".format(jcol+1))
+			ax.imshow(np.real(eigvec[:,jcol]).reshape(-1,N4*Nvert),\
+						interpolation="nearest",cmap="binary")
+			ax = fig.add_subplot(nrow,ncol,1+jcol+ncol)
+			ax.set_title("Imag EV {}".format(jcol+1))
+			ax.imshow(np.real(eigvec[:N4*N4*Nvert,jcol]).reshape(N4,N4*Nvert),\
+						interpolation="nearest",cmap="binary")
+
+
 		plt.show()
 		exit()
 
 	## test heterogeneity
-	if True:
+	if False:
 		N4 = N
 		sigma_factor = 0.4
 		W4to4_params.update({"sigma"	:	0.2*sigma_factor,
@@ -843,15 +965,17 @@ if __name__=="__main__":
 		exit()
 
 	## test arbor
-	if False:
+	if True:
 		N4 = N
 		arbor_params = {"mean_eccentricity"		:	0.5,
 						"SD_eccentricity"	:	0.0,
 						"SD_size"			:	0.0,
-						"heterogeneity_type":	"independent"}#"independent"
+						"heterogeneity_type":	None,#"independent"
+						"ret_scatter" : False
+						}
 		W4 = Connectivity((N4,N4), (N4,N4),random_seed=12345, Nvert=Nvert)
-		arbor = W4.create_arbor(0.4, profile="gaussian")#,arbor_params=arbor_params)
-		print("arbor",arbor.shape,np.sum(arbor>0,axis=0),np.unique(np.sum(arbor,axis=1)))
+		arbor = W4.create_arbor(0.3, profile="gaussian",arbor_params=arbor_params)
+		# print("arbor",arbor.shape,np.sum(arbor>0,axis=0),np.unique(np.sum(arbor,axis=1)))
 		fig = plt.figure()
 		ax = fig.add_subplot(131)
 		ax.set_title("sum={}".format(np.sum(arbor[:N4**2*Nvert,1])))
@@ -860,7 +984,11 @@ if __name__=="__main__":
 		plt.colorbar(im,ax=ax)
 		ax = fig.add_subplot(132)
 		ax.set_title("sum={}".format(np.sum(arbor[:N4**2*Nvert,0])))
-		im=ax.imshow(arbor[N4//2+N4**2//2-2,:N4**2*Nvert].reshape(N4,N4*Nvert),interpolation="nearest",\
+		im=ax.imshow(arbor[:N4**2*Nvert,N4//2+N4**2//2+5].reshape(N4,N4*Nvert),interpolation="nearest",\
+						cmap="binary")
+		plt.colorbar(im,ax=ax)
+		ax = fig.add_subplot(133)
+		im=ax.imshow(arbor,interpolation="nearest",\
 						cmap="binary")
 		plt.colorbar(im,ax=ax)
 		plt.show()

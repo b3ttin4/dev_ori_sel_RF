@@ -6,6 +6,7 @@ import re
 import sys
 import linecache
 from copy import copy
+import yaml
 
 from bettina.modeling.ori_dev_model import data_dir, normalisation_constraints as nc
 
@@ -35,6 +36,24 @@ def get_version(save_path,version=None,readonly=True):
 	if not readonly:
 		os.makedirs(save_path + "v{}".format(version))
 	return version
+
+def load_external_params(filename):
+	""" load file with parameter settings
+	input:
+	filename: name of file
+	"""
+	current_dir = os.getcwd()
+	if os.environ["USER"]=="bettina":
+		file_path = os.path.join(current_dir,"bettina/modeling/ori_dev_model/data",filename+".yaml")
+	elif os.environ["USER"]=="bh2757":
+		file_path = os.path.join(current_dir,"code/bettina/modeling/ori_dev_model/data",filename+".yaml")
+	else:
+		raise Exception("User not found. Can't load parameter file.")
+
+	with open(file_path,"r") as file:
+		params_dict = yaml.safe_load(file)
+	print("MISC params_dict",filename,params_dict)
+	return params_dict
 
 def save_data(Version,filename,data_dict):
 	# if "cct" in data.keys():
